@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-02-07
+
+### Fixed
+- GitHub Actions runners updated and Linux build dependencies added for release artifacts.
+
 ## [0.1.0] - 2026-02-07
 
 ### Added
@@ -17,4 +22,5 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Readme updated for cross-platform build and release flow.
 
+[0.1.1]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.1
 [0.1.0]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.0
