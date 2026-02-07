@@ -1,0 +1,20 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [0.1.0] - 2026-02-07
+
+### Added
+- Modernized UI layout and styling.
+- RadioDNS tab with full automation: SI.xml generation, logo creation/resizing, and DNS helper tools.
+- One-click copy actions for FQDN, bearer, CNAME, SRV, and DNS bundle.
+- File picker for logo source image and quick open of output folder/SI.xml.
+- Validation of RadioDNS pack content and logo dimensions.
+- Cross-platform GitHub Actions for macOS, Windows, and Linux releases.
+- Local release build script.
+- Terminal startup banner for quick usage guidance.
+
+### Changed
+- Readme updated for cross-platform build and release flow.
+
+[0.1.0]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.0
