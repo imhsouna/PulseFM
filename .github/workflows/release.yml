@@ -1,0 +1,83 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-13, macos-14, windows-2022, ubuntu-22.04]
+        include:
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          mkdir -p dist
+          BIN=target/${{ matrix.target }}/release/pulse-fm-rds-encoder
+          cp "$BIN" dist/
+          cd dist
+          zip -r pulse-fm-rds-encoder-${{ matrix.target }}.zip pulse-fm-rds-encoder
+
+      - name: Package (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          mkdir dist
+          $bin = "target/${{ matrix.target }}/release/pulse-fm-rds-encoder.exe"
+          Copy-Item $bin dist/
+          Compress-Archive -Path dist/pulse-fm-rds-encoder.exe -DestinationPath dist/pulse-fm-rds-encoder-${{ matrix.target }}.zip
+
+      - name: Package (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          mkdir -p dist
+          BIN=target/${{ matrix.target }}/release/pulse-fm-rds-encoder
+          cp "$BIN" dist/
+          cd dist
+          tar -czf pulse-fm-rds-encoder-${{ matrix.target }}.tar.gz pulse-fm-rds-encoder
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulse-fm-rds-encoder-${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/pulse-fm-rds-encoder-*.zip,dist/**/pulse-fm-rds-encoder-*.tar.gz

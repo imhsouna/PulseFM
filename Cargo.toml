@@ -1,0 +1,26 @@
+[package]
+name = "pulse-fm-rds-encoder"
+version = "0.1.0"
+edition = "2021"
+default-run = "pulse-fm-rds-encoder"
+
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+cpal = "0.15"
+hound = "3.5"
+iced = { version = "0.10", default-features = true, features = ["tokio", "canvas"] }
+ringbuf = "0.3"
+rustfft = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.24", default-features = false, features = ["png"] }
+rfd = "0.14"
+
+[[bin]]
+name = "pulse-fm-rds-encoder"
+path = "src/main.rs"
+
+[[bin]]
+name = "pulse-fm-rds-cli"
+path = "src/bin/pulse_fm_rds_cli.rs"
