@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.10] - 2026-02-08
+
+### Fixed
+- Stop button now halts audio streams cleanly to prevent overlap after repeated start/stop.
+- License tab layout now resizes cleanly with a side-by-side layout on wide screens.
+
 ## [0.1.9] - 2026-02-08
 
 ### Fixed
@@ -65,6 +71,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Readme updated for cross-platform build and release flow.
 
+[0.1.10]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.10
 [0.1.9]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.9
 [0.1.8]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.8
 [0.1.7]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.7

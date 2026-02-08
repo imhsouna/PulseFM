@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -404,6 +404,7 @@ impl LiveMpx {
 pub struct AudioEngine {
     _input_stream: Option<cpal::Stream>,
     _output_stream: cpal::Stream,
+    running: Arc<AtomicBool>,
     shared: Arc<Mutex<LiveMpx>>,
     meter: Arc<MeterState>,
     scope: Arc<Mutex<VecDeque<f32>>>,
@@ -673,6 +674,8 @@ pub fn start_engine(config: AudioEngineConfig) -> Result<AudioEngine> {
     let err_fn = |err| eprintln!("output stream error: {}", err);
     let xrun_for_output = Arc::clone(&xrun_count);
     let fill_for_output = Arc::clone(&buffer_fill);
+    let running = Arc::new(AtomicBool::new(true));
+    let running_for_output = Arc::clone(&running);
     let latency_ms = match output_config.buffer_size {
         cpal::BufferSize::Fixed(frames) => frames as f32 / OUTPUT_SAMPLE_RATE as f32 * 1000.0,
         cpal::BufferSize::Default => 0.0,
@@ -682,6 +685,19 @@ pub fn start_engine(config: AudioEngineConfig) -> Result<AudioEngine> {
     let output_stream = output_device.build_output_stream(
         &output_config,
         move |data: &mut [f32], _| {
+            if !running_for_output.load(Ordering::Relaxed) {
+                for sample in data.iter_mut() {
+                    *sample = 0.0;
+                }
+                meter_for_output.rms.store(f32_to_u32(0.0), Ordering::Relaxed);
+                meter_for_output.peak.store(f32_to_u32(0.0), Ordering::Relaxed);
+                meter_for_output.pilot.store(f32_to_u32(0.0), Ordering::Relaxed);
+                meter_for_output.rds.store(f32_to_u32(0.0), Ordering::Relaxed);
+                for i in 0..SPECTRUM_BANDS {
+                    meter_for_output.bands_db[i].store(f32_to_u32(SPECTRUM_MIN_DB), Ordering::Relaxed);
+                }
+                return;
+            }
             let mut engine = shared_for_output.lock().unwrap();
             let mut index = 0;
             let mut sum_sq = 0.0f32;
@@ -800,6 +816,7 @@ pub fn start_engine(config: AudioEngineConfig) -> Result<AudioEngine> {
     Ok(AudioEngine {
         _input_stream: input_stream,
         _output_stream: output_stream,
+        running,
         shared,
         meter,
         scope,
@@ -813,6 +830,14 @@ pub fn start_engine(config: AudioEngineConfig) -> Result<AudioEngine> {
 }
 
 impl AudioEngine {
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::Relaxed);
+        if let Some(ref stream) = self._input_stream {
+            let _ = stream.pause();
+        }
+        let _ = self._output_stream.pause();
+    }
+
     pub fn meter_snapshot(&self) -> MeterSnapshot {
         let mut bands = [0.0f32; SPECTRUM_BANDS];
         for i in 0..SPECTRUM_BANDS {
@@ -986,5 +1011,15 @@ impl AudioEngine {
         if let Ok(mut engine) = self.shared.lock() {
             engine.set_ps_alternates(list, interval_groups);
         }
+    }
+}
+
+impl Drop for AudioEngine {
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+        if let Some(ref stream) = self._input_stream {
+            let _ = stream.pause();
+        }
+        let _ = self._output_stream.pause();
     }
 }

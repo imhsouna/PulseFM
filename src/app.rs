@@ -3,6 +3,8 @@ use iced::widget::button as button_widget;
 use iced::widget::container as container_widget;
 use iced::{Alignment, Background, Command, Element, Length, Theme};
 use iced::theme;
+use iced::Event;
+use iced::window;
 use serde::{Deserialize, Serialize};
 use rand::Rng;
 use image::{GenericImageView, Rgba, RgbaImage};
@@ -267,8 +269,9 @@ pub enum Message {
     RadioDnsCopyBearer,
     RadioDnsCopyDnsBundle,
     RadioDnsCopyCname,
-    OpenLicense,
     CopyPi,
+    WindowResized(u32, u32),
+    NoOp,
     RefreshDevices,
     InputSelected(String),
     OutputSelected(String),
@@ -341,6 +344,7 @@ pub struct App {
     xrun_count: u32,
     buffer_fill: f32,
     latency_ms: f32,
+    window_width: f32,
     pi_country_hex: String,
     pi_area_hex: String,
     pi_program_hex: String,
@@ -438,6 +442,7 @@ impl Default for App {
             xrun_count: 0,
             buffer_fill: 0.0,
             latency_ms: 0.0,
+            window_width: 1200.0,
             pi_country_hex: "7".to_string(),
             pi_area_hex: "2".to_string(),
             pi_program_hex: "00".to_string(),
@@ -484,7 +489,13 @@ impl iced::Application for App {
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
-        iced::time::every(Duration::from_millis(200)).map(|_| Message::Tick)
+        iced::Subscription::batch(vec![
+            iced::time::every(Duration::from_millis(200)).map(|_| Message::Tick),
+            iced::subscription::events().map(|event| match event {
+                Event::Window(window::Event::Resized { width, height: _ }) => Message::WindowResized(width, 0),
+                _ => Message::NoOp,
+            }),
+        ])
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
@@ -1173,15 +1184,6 @@ impl iced::Application for App {
                 }
                 Command::none()
             }
-            Message::OpenLicense => {
-                let license_path = std::env::current_dir()
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                    .join("LICENSE");
-                if let Err(e) = open_in_file_manager(&license_path) {
-                    self.status = format!("Open LICENSE error: {}", e);
-                }
-                Command::none()
-            }
             Message::CopyPi => {
                 let pi = self.pi_hex.trim();
                 if pi.is_empty() {
@@ -1191,6 +1193,11 @@ impl iced::Application for App {
                 self.status = "PI copied".to_string();
                 Command::batch(vec![iced::clipboard::write(pi.to_string())])
             }
+            Message::WindowResized(width, _height) => {
+                self.window_width = width as f32;
+                Command::none()
+            }
+            Message::NoOp => Command::none(),
             Message::RadioDnsCopySrv => {
                 let srv_line = build_srv_record_line(&self.radiodns_broadcaster_fqdn, &self.radiodns_srv_host, &self.radiodns_srv_port);
                 self.status = "SRV record copied".to_string();
@@ -1320,6 +1327,9 @@ impl iced::Application for App {
                 Command::none()
             }
             Message::StopStream => {
+                if let Some(engine) = &self.engine {
+                    engine.stop();
+                }
                 self.engine = None;
                 self.status = "Stopped".to_string();
                 Command::none()
@@ -1352,29 +1362,31 @@ impl iced::Application for App {
         .spacing(10)
         .align_items(Alignment::Center);
 
-        let presets_card = card(
-            "Presets",
-            column![
-                row![
-                    text("Preset:"),
-                    pick_list(preset_names.clone(), self.preset_selected.clone(), Message::PresetSelected),
-                    button("Load")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::LoadPreset),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                row![
-                    text("Name:"),
-                    text_input("Preset name", &self.preset_name).on_input(Message::PresetNameChanged),
-                    button("Save")
-                        .style(theme::Button::Custom(Box::new(PrimaryButton)))
-                        .on_press(Message::SavePreset),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-            ],
-        );
+        let presets_card = || {
+            card(
+                "Presets",
+                column![
+                    row![
+                        text("Preset:"),
+                        pick_list(preset_names.clone(), self.preset_selected.clone(), Message::PresetSelected),
+                        button("Load")
+                            .style(theme::Button::Custom(Box::new(GhostButton)))
+                            .on_press(Message::LoadPreset),
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center),
+                    row![
+                        text("Name:"),
+                        text_input("Preset name", &self.preset_name).on_input(Message::PresetNameChanged),
+                        button("Save")
+                            .style(theme::Button::Custom(Box::new(PrimaryButton)))
+                            .on_press(Message::SavePreset),
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center),
+                ],
+            )
+        };
 
         let stream_card = || {
             card(
@@ -1481,52 +1493,54 @@ impl iced::Application for App {
             .map(|pi| format!("{:04X}", pi))
             .unwrap_or_else(|_| "—".to_string());
 
-        let rds_identity_card = card(
-            "Identity + DI",
-            column![
-                text("PI (Program Identification) should come from your regulator. Use this helper to format a valid PI from parts.").style(color_muted()),
-                text("Tunisia example: country code 7, ECC E2. For other countries, enter your assigned values.").style(color_muted()),
-                row![
-                    text("Country preset:"),
-                    pick_list(self.country_items.clone(), Some(self.country_selected.clone()), Message::CountrySelected),
-                    text("PI builder:"),
-                    text_input("7", &self.pi_country_hex).on_input(Message::CountryCodeChanged),
-                    text_input("2", &self.pi_area_hex).on_input(Message::AreaCodeChanged),
-                    text_input("00", &self.pi_program_hex).on_input(Message::ProgramRefChanged),
-                    button("Apply PI")
-                        .on_press(Message::ApplyPiFromParts)
-                        .style(theme::Button::Custom(Box::new(PrimaryButton))),
-                    button("Copy PI")
-                        .on_press(Message::CopyPi)
-                        .style(theme::Button::Custom(Box::new(GhostButton))),
-                    button("Random PI")
-                        .on_press(Message::GenerateRandomPi)
-                        .style(theme::Button::Custom(Box::new(GhostButton))),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                row![
-                    text(format!("PI preview: {}", pi_preview)).style(color_muted()),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                text("Random PI is for testing only. For production, use the code assigned by your regulator.").style(color_muted()),
-                row![
-                    text("ECC (hex):"),
-                    text_input("E2", &self.ecc_hex).on_input(Message::EccChanged),
-                    text("ECC identifies country in RDS. Leave default if unknown.").style(color_muted()),
-                    text("DI:"),
-                    checkbox("Stereo", self.di_stereo, Message::DiStereoChanged),
-                    checkbox("Artificial head", self.di_artificial, Message::DiArtificialChanged),
-                    checkbox("Compressed", self.di_compressed, Message::DiCompressedChanged),
-                    checkbox("Dynamic PTY", self.di_dynamic, Message::DiDynamicChanged),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-            ],
-        );
+        let rds_identity_card = || {
+            card(
+                "Identity + DI",
+                column![
+                    text("PI (Program Identification) should come from your regulator. Use this helper to format a valid PI from parts.").style(color_muted()),
+                    text("Tunisia example: country code 7, ECC E2. For other countries, enter your assigned values.").style(color_muted()),
+                    row![
+                        text("Country preset:"),
+                        pick_list(self.country_items.clone(), Some(self.country_selected.clone()), Message::CountrySelected),
+                        text("PI builder:"),
+                        text_input("7", &self.pi_country_hex).on_input(Message::CountryCodeChanged),
+                        text_input("2", &self.pi_area_hex).on_input(Message::AreaCodeChanged),
+                        text_input("00", &self.pi_program_hex).on_input(Message::ProgramRefChanged),
+                        button("Apply PI")
+                            .on_press(Message::ApplyPiFromParts)
+                            .style(theme::Button::Custom(Box::new(PrimaryButton))),
+                        button("Copy PI")
+                            .on_press(Message::CopyPi)
+                            .style(theme::Button::Custom(Box::new(GhostButton))),
+                        button("Random PI")
+                            .on_press(Message::GenerateRandomPi)
+                            .style(theme::Button::Custom(Box::new(GhostButton))),
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center),
+                    row![
+                        text(format!("PI preview: {}", pi_preview)).style(color_muted()),
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center),
+                    text("Random PI is for testing only. For production, use the code assigned by your regulator.").style(color_muted()),
+                    row![
+                        text("ECC (hex):"),
+                        text_input("E2", &self.ecc_hex).on_input(Message::EccChanged),
+                        text("ECC identifies country in RDS. Leave default if unknown.").style(color_muted()),
+                        text("DI:"),
+                        checkbox("Stereo", self.di_stereo, Message::DiStereoChanged),
+                        checkbox("Artificial head", self.di_artificial, Message::DiArtificialChanged),
+                        checkbox("Compressed", self.di_compressed, Message::DiCompressedChanged),
+                        checkbox("Dynamic PTY", self.di_dynamic, Message::DiDynamicChanged),
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center),
+                ],
+            )
+        };
 
-        let rds_schedule_card = card(
+        let rds_schedule_card = || card(
             "Group Scheduling",
             column![
                 row![
@@ -1556,7 +1570,7 @@ impl iced::Application for App {
             ],
         );
 
-        let af_card = card(
+        let af_card = || card(
             "AF Helper",
             column![
                 row![
@@ -1590,7 +1604,7 @@ impl iced::Application for App {
             ],
         );
 
-        let scrolling_card = card(
+        let scrolling_card = || card(
             "Scrolling",
             column![
                 row![
@@ -1612,7 +1626,7 @@ impl iced::Application for App {
             ],
         );
 
-        let output_card = card(
+        let output_card = || card(
             "Output",
             column![
                 row![
@@ -1633,7 +1647,7 @@ impl iced::Application for App {
             ],
         );
 
-        let levels_card = card(
+        let levels_card = || card(
             "Stereo + RDS",
             column![
                 row![
@@ -1653,7 +1667,7 @@ impl iced::Application for App {
             ],
         );
 
-        let processing_card = card(
+        let processing_card = || card(
             "Processing",
             column![
                 row![
@@ -1706,7 +1720,7 @@ impl iced::Application for App {
             )
         };
 
-        let meters_full = card_accent(
+        let meters_full = || card_accent(
             "MPX Meter",
             column![
                 row![
@@ -1754,7 +1768,7 @@ impl iced::Application for App {
             ],
         );
 
-        let export_card = card(
+        let export_card = || card(
             "WAV Export",
             column![
                 row![
@@ -1961,43 +1975,61 @@ impl iced::Application for App {
                 .spacing(4),
             ),
         ]
-        .spacing(16);
+        .spacing(16)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
-        let license_path = std::env::current_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            .join("LICENSE");
+        let compact = self.window_width < 980.0;
         let license_text = include_str!("../LICENSE").to_string();
         let license_tab = column![
             card(
                 "License",
                 column![
                     text("This project is licensed under the terms in the LICENSE file.").style(color_muted()),
-                    text(format!("Path: {}", license_path.display())).style(color_muted()),
-                    button("Open LICENSE")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::OpenLicense),
                 ]
                 .spacing(6),
             ),
-            card(
-                "License Text",
-                column![
-                    scrollable(text(license_text).style(color_muted()))
-                        .height(Length::Fill)
-                        .width(Length::Fill)
-                ]
-                .spacing(6),
-            ),
-            card(
-                "Legal Notice",
-                column![
-                    text("Generating or transmitting RF without a license is illegal in many jurisdictions.").style(color_muted()),
-                    text("This app only generates baseband audio (MPX) and does not transmit.").style(color_muted()),
-                ]
-                .spacing(6),
-            ),
+            if compact {
+                card(
+                    "License Text",
+                    column![
+                        scrollable(text(license_text).style(color_muted()))
+                            .height(Length::Fill)
+                            .width(Length::Fill)
+                    ]
+                    .spacing(6),
+                )
+                .into()
+            } else {
+                Element::from(
+                    row![
+                        container(card(
+                            "License Text",
+                            column![
+                                scrollable(text(license_text).style(color_muted()))
+                                    .height(Length::Fill)
+                                    .width(Length::Fill)
+                            ]
+                            .spacing(6),
+                        ))
+                        .width(Length::FillPortion(3)),
+                        container(card(
+                            "Legal Notice",
+                            column![
+                                text("Generating or transmitting RF without a license is illegal in many jurisdictions.").style(color_muted()),
+                                text("This app only generates baseband audio (MPX) and does not transmit.").style(color_muted()),
+                            ]
+                            .spacing(6),
+                        ))
+                        .width(Length::FillPortion(1)),
+                    ]
+                    .spacing(16),
+                )
+            },
         ]
-        .spacing(16);
+        .spacing(16)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
         let status_pill = if self.engine.is_some() {
             pill("LIVE", color_live(), Color::from_rgb8(6, 24, 19))
@@ -2039,49 +2071,94 @@ impl iced::Application for App {
         .width(Length::Fill)
         .style(theme::Container::from(hero_style));
 
-        let dashboard = column![
-            row![
-                column![stream_card(), device_card(), presets_card].spacing(16).width(Length::FillPortion(2)),
-                column![station_card(), meter_summary_card()].spacing(16).width(Length::FillPortion(3)),
-            ]
-            .spacing(16)
-            .align_items(Alignment::Start),
-        ];
-
-        let audio_tab = column![
-            row![
-                column![device_card(), stream_card(), health_card].spacing(16).width(Length::FillPortion(3)),
-                column![meter_summary_card()].spacing(16).width(Length::FillPortion(2)),
-            ]
-            .spacing(16)
-            .align_items(Alignment::Start),
-        ];
-
-        let rds_tab = column![
-            row![
-                column![station_card(), rds_identity_card].spacing(16).width(Length::FillPortion(3)),
-                column![rds_schedule_card, af_card, scrolling_card].spacing(16).width(Length::FillPortion(2)),
-            ]
-            .spacing(16)
-            .align_items(Alignment::Start),
-        ];
-
-        let processing_tab = column![
-            row![
-                column![output_card, levels_card].spacing(16).width(Length::FillPortion(3)),
-                column![processing_card].spacing(16).width(Length::FillPortion(2)),
-            ]
-            .spacing(16)
-            .align_items(Alignment::Start),
-        ];
-
         let body: Element<'_, Message> = match self.tab_selected {
-            Tab::Dashboard => dashboard.into(),
-            Tab::Audio => audio_tab.into(),
-            Tab::Rds => rds_tab.into(),
-            Tab::Processing => processing_tab.into(),
-            Tab::Meters => meters_full.into(),
-            Tab::Export => export_card.into(),
+            Tab::Dashboard => {
+                if compact {
+                    column![
+                        stream_card(),
+                        device_card(),
+                        presets_card(),
+                        station_card(),
+                        meter_summary_card(),
+                    ]
+                    .spacing(16)
+                    .into()
+                } else {
+                    column![
+                        row![
+                            column![stream_card(), device_card(), presets_card()].spacing(16).width(Length::FillPortion(2)),
+                            column![station_card(), meter_summary_card()].spacing(16).width(Length::FillPortion(3)),
+                        ]
+                        .spacing(16)
+                        .align_items(Alignment::Start),
+                    ]
+                    .into()
+                }
+            }
+            Tab::Audio => {
+                if compact {
+                    column![
+                        device_card(),
+                        stream_card(),
+                        health_card,
+                        meter_summary_card(),
+                    ]
+                    .spacing(16)
+                    .into()
+                } else {
+                    column![
+                        row![
+                            column![device_card(), stream_card(), health_card].spacing(16).width(Length::FillPortion(3)),
+                            column![meter_summary_card()].spacing(16).width(Length::FillPortion(2)),
+                        ]
+                        .spacing(16)
+                        .align_items(Alignment::Start),
+                    ]
+                    .into()
+                }
+            }
+            Tab::Rds => {
+                if compact {
+                    column![
+                        station_card(),
+                        rds_identity_card(),
+                        rds_schedule_card(),
+                        af_card(),
+                        scrolling_card(),
+                    ]
+                    .spacing(16)
+                    .into()
+                } else {
+                    column![
+                        row![
+                            column![station_card(), rds_identity_card()].spacing(16).width(Length::FillPortion(3)),
+                            column![rds_schedule_card(), af_card(), scrolling_card()].spacing(16).width(Length::FillPortion(2)),
+                        ]
+                        .spacing(16)
+                        .align_items(Alignment::Start),
+                    ]
+                    .into()
+                }
+            }
+            Tab::Processing => {
+                if compact {
+                    column![output_card(), levels_card(), processing_card()]
+                        .spacing(16)
+                        .into()
+                } else {
+                    column![
+                        row![
+                            column![output_card(), levels_card()].spacing(16).width(Length::FillPortion(3)),
+                            column![processing_card()].spacing(16).width(Length::FillPortion(2)),
+                        ]
+                        .spacing(16)
+                        .align_items(Alignment::Start),
+                    ]
+                    .into()
+                }
+            }
+            Tab::Meters => meters_full().into(),
+            Tab::Export => export_card().into(),
             Tab::RadioDns => radiodns_tab.into(),
             Tab::About => about_tab.into(),
             Tab::License => license_tab.into(),
@@ -2095,6 +2172,7 @@ impl iced::Application for App {
         .spacing(18)
         .padding(24)
         .width(Length::Fill)
+        .height(Length::Fill)
         .align_items(Alignment::Start);
 
         let scroll = scrollable(content)
