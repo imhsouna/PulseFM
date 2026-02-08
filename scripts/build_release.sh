@@ -36,7 +36,7 @@ build_linux_gnu() {
       rustup toolchain add "${toolchain}" --profile minimal --force-non-host
     fi
     echo "[build] ${target} (cross + docker)"
-    cross build --release --target "${target}"
+    DOCKER_DEFAULT_PLATFORM=linux/amd64 cross build --release --target "${target}"
     return
   fi
   echo "[skip] ${target} (cross not installed)"

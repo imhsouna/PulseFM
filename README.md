@@ -92,6 +92,12 @@ If you see a toolchain error, install the Linux toolchain once:
 rustup toolchain add stable-x86_64-unknown-linux-gnu --profile minimal --force-non-host
 ```
 
+On Apple Silicon, `cross` needs the Linux/amd64 container:
+
+```bash
+DOCKER_DEFAULT_PLATFORM=linux/amd64 cross build --release --target x86_64-unknown-linux-gnu
+```
+
 ## Troubleshooting
 - **No audio devices**: click **Refresh** in the Audio tab.
 - **No output**: your device must support **192 kHz float32**.
