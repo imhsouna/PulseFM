@@ -53,6 +53,12 @@ Expected hosting:
 ## macOS App Bundle
 Releases include a `PulseFM.app` bundle so you get a clean launch without a terminal popup.
 
+If macOS blocks the app after download, remove the quarantine flag:
+
+```bash
+sudo xattr -r -d com.apple.quarantine "/Applications/PulseFM.app"
+```
+
 ## Releases (GitHub Actions)
 Tagging creates macOS (arm64), Windows, and Linux artifacts:
 
@@ -73,6 +79,7 @@ Artifacts are uploaded by `.github/workflows/release.yml`.
 - **No audio devices**: click **Refresh** in the Audio tab.
 - **No output**: your device must support **192 kHz float32**.
 - **RadioDNS validation fails**: verify logo sizes and `SI.xml` path.
+- **macOS can’t open app**: run `sudo xattr -r -d com.apple.quarantine "/Applications/PulseFM.app"`.
 
 ## Credits
 **Developer**: Hsouna Zinoubi
