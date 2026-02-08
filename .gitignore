@@ -1,3 +1,4 @@
 /target/
+/dist/
 /radiodns/
 .DS_Store

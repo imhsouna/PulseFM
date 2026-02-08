@@ -5,6 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 TARGETS=("x86_64-apple-darwin" "aarch64-apple-darwin" "x86_64-pc-windows-msvc" "aarch64-pc-windows-msvc" "x86_64-unknown-linux-gnu")
+APP_NAME="pulse-fm-rds-encoder"
+DIST_DIR="${ROOT_DIR}/dist"
+
+bold() { printf "\033[1m%s\033[0m\n" "$*"; }
+note() { printf "• %s\n" "$*"; }
+
+mkdir -p "$DIST_DIR"
 
 is_macos() {
   [[ "$(uname -s)" == "Darwin" ]]
@@ -44,6 +51,45 @@ build_linux_gnu() {
   echo "       Requires: Docker Desktop running"
 }
 
+package_target() {
+  local target="$1"
+  local target_dir="${DIST_DIR}/${target}"
+  rm -rf "$target_dir"
+  mkdir -p "$target_dir"
+
+  case "$target" in
+    *apple-darwin)
+      local bin="target/${target}/release/${APP_NAME}"
+      if [[ -f "$bin" ]]; then
+        cp "$bin" "$target_dir/"
+        if [[ -x "${ROOT_DIR}/scripts/macos_bundle.sh" ]]; then
+          "${ROOT_DIR}/scripts/macos_bundle.sh" "$target"
+          cp -R "${ROOT_DIR}/dist/PulseFM.app" "$target_dir/" 2>/dev/null || true
+        fi
+        (cd "$target_dir" && zip -r "${APP_NAME}-${target}.zip" "${APP_NAME}" PulseFM.app >/dev/null 2>&1 || \
+          (cd "$target_dir" && zip -r "${APP_NAME}-${target}.zip" "${APP_NAME}"))
+      fi
+      ;;
+    *windows-msvc)
+      local bin="target/${target}/release/${APP_NAME}.exe"
+      if [[ -f "$bin" ]]; then
+        cp "$bin" "$target_dir/"
+        (cd "$target_dir" && zip -r "${APP_NAME}-${target}.zip" "${APP_NAME}.exe" >/dev/null 2>&1 || \
+          (cd "$target_dir" && zip -r "${APP_NAME}-${target}.zip" "${APP_NAME}.exe"))
+      fi
+      ;;
+    *unknown-linux-gnu)
+      local bin="target/${target}/release/${APP_NAME}"
+      if [[ -f "$bin" ]]; then
+        cp "$bin" "$target_dir/"
+        (cd "$target_dir" && tar -czf "${APP_NAME}-${target}.tar.gz" "${APP_NAME}")
+      fi
+      ;;
+  esac
+}
+
+declare -a BUILT_TARGETS=()
+
 for target in "${TARGETS[@]}"; do
   if ! rustup target list | grep -q "^${target} (installed)"; then
     echo "[skip] ${target} (not installed)"
@@ -72,6 +118,14 @@ for target in "${TARGETS[@]}"; do
       build_with_cargo "${target}"
       ;;
   esac
+
+  package_target "${target}"
+  BUILT_TARGETS+=("${target}")
 done
 
-echo "Done. Artifacts are in target/<triple>/release/"
+bold "Build complete"
+note "Artifacts organized in ${DIST_DIR}"
+for t in "${BUILT_TARGETS[@]}"; do
+  note "${t}:"
+  ls -1 "${DIST_DIR}/${t}" | sed 's/^/  - /'
+done
