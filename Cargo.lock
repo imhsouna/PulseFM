@@ -2882,6 +2882,7 @@ dependencies = [
  "hound",
  "iced",
  "image",
+ "rand",
  "rfd",
  "ringbuf",
  "rustfft",
