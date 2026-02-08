@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-02-08
+
+### Changed
+- Release/CI matrix trimmed to macOS (arm64), Windows, and Linux to avoid Intel macOS runner delays.
+
 ## [0.1.3] - 2026-02-08
 
 ### Fixed
@@ -32,6 +37,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Readme updated for cross-platform build and release flow.
 
+[0.1.4]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.4
 [0.1.3]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.3
 [0.1.2]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.2
 [0.1.1]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.1
