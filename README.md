@@ -98,6 +98,9 @@ On Apple Silicon, `cross` needs the Linux/amd64 container:
 DOCKER_DEFAULT_PLATFORM=linux/amd64 cross build --release --target x86_64-unknown-linux-gnu
 ```
 
+Linux builds use a custom Dockerfile (`Dockerfile.x86_64-unknown-linux-gnu`) based on
+`public.ecr.aws/ubuntu/ubuntu:22.04` to avoid Docker Hub auth limits and provide a newer glibc.
+
 ## Troubleshooting
 - **No audio devices**: click **Refresh** in the Audio tab.
 - **No output**: your device must support **192 kHz float32**.

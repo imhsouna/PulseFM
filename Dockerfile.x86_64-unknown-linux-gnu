@@ -1,0 +1,29 @@
+FROM public.ecr.aws/ubuntu/ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    pkg-config \
+    libasound2-dev \
+    libx11-dev \
+    libxi-dev \
+    libxrandr-dev \
+    libxcursor-dev \
+    libxkbcommon-dev \
+    libwayland-dev \
+    libxinerama-dev \
+    libudev-dev \
+    libegl1-mesa-dev \
+    libgl1-mesa-dev \
+    libx11-xcb-dev \
+    libxcb-render0-dev \
+    libxcb-shape0-dev \
+    libxcb-xfixes0-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup toolchain install stable --profile minimal && rustup default stable
