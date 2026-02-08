@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-02-08
+
+### Fixed
+- Linux CI install step line continuations corrected to prevent apt failures.
+
 ## [0.1.2] - 2026-02-08
 
 ### Fixed
@@ -27,6 +32,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Readme updated for cross-platform build and release flow.
 
+[0.1.3]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.3
 [0.1.2]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.2
 [0.1.1]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.1
 [0.1.0]: https://github.com/imhsouna/PulseFM/releases/tag/v0.1.0
