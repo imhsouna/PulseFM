@@ -1966,8 +1966,7 @@ impl iced::Application for App {
         let license_path = std::env::current_dir()
             .unwrap_or_else(|_| std::path::PathBuf::from("."))
             .join("LICENSE");
-        let license_text = fs::read_to_string(&license_path)
-            .unwrap_or_else(|_| "LICENSE file not found in repository root.".to_string());
+        let license_text = include_str!("../LICENSE").to_string();
         let license_tab = column![
             card(
                 "License",
