@@ -75,6 +75,15 @@ Artifacts are uploaded by `.github/workflows/release.yml`.
 ./scripts/build_release.sh
 ```
 
+### Local Cross‑Compile on macOS (Windows + Linux)
+The script will build macOS targets directly. For Windows/Linux on macOS, install the tools below and re‑run:
+
+```bash
+rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
+brew install zig
+cargo install cargo-xwin
+```
+
 ## Troubleshooting
 - **No audio devices**: click **Refresh** in the Audio tab.
 - **No output**: your device must support **192 kHz float32**.
