@@ -80,9 +80,12 @@ The script will build macOS targets directly. For Windows/Linux on macOS, instal
 
 ```bash
 rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
-brew install zig
 cargo install cargo-xwin
+cargo install cross
 ```
+
+Linux cross‑compile uses `cross` (Docker) to avoid ALSA `pkg-config` sysroot issues.
+Make sure Docker Desktop is running before building Linux targets.
 
 ## Troubleshooting
 - **No audio devices**: click **Refresh** in the Audio tab.

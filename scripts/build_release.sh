@@ -29,13 +29,14 @@ build_windows_msvc() {
 
 build_linux_gnu() {
   local target="$1"
-  if ! command -v zig >/dev/null 2>&1; then
-    echo "[skip] ${target} (zig not installed)"
-    echo "       Install: brew install zig"
+  if command -v cross >/dev/null 2>&1; then
+    echo "[build] ${target} (cross + docker)"
+    cross build --release --target "${target}"
     return
   fi
-  echo "[build] ${target} (zig linker)"
-  RUSTFLAGS="-C linker=zigcc" cargo build --release --target "${target}"
+  echo "[skip] ${target} (cross not installed)"
+  echo "       Install: cargo install cross"
+  echo "       Requires: Docker Desktop running"
 }
 
 for target in "${TARGETS[@]}"; do
