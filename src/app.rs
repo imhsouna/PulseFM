@@ -4,6 +4,7 @@ use iced::widget::container as container_widget;
 use iced::{Alignment, Background, Command, Element, Length, Theme};
 use iced::theme;
 use serde::{Deserialize, Serialize};
+use rand::Rng;
 use image::{GenericImageView, Rgba, RgbaImage};
 use std::fs;
 use std::path::PathBuf;
@@ -18,6 +19,13 @@ use pulse_fm_rds_encoder::wav_writer::{generate_mpx_wav, GenerateConfig};
 pub(crate) struct PtyItem {
     code: u8,
     label: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CountryItem {
+    label: &'static str,
+    country_hex: Option<&'static str>,
+    ecc_hex: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +44,8 @@ pub(crate) enum Tab {
     Meters,
     Export,
     RadioDns,
+    About,
+    License,
 }
 
 impl std::fmt::Display for Tab {
@@ -48,6 +58,8 @@ impl std::fmt::Display for Tab {
             Tab::Meters => write!(f, "Meters"),
             Tab::Export => write!(f, "Export"),
             Tab::RadioDns => write!(f, "RadioDNS"),
+            Tab::About => write!(f, "About"),
+            Tab::License => write!(f, "License"),
         }
     }
 }
@@ -65,6 +77,12 @@ impl std::fmt::Display for Preemphasis {
 impl std::fmt::Display for PtyItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:02} {}", self.code, self.label)
+    }
+}
+
+impl std::fmt::Display for CountryItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label)
     }
 }
 
@@ -107,6 +125,21 @@ fn pty_items() -> Vec<PtyItem> {
 
 fn preemph_items() -> Vec<Preemphasis> {
     vec![Preemphasis::Off, Preemphasis::Us50, Preemphasis::Us75]
+}
+
+fn country_items() -> Vec<CountryItem> {
+    vec![
+        CountryItem {
+            label: "Tunisia (7 / E2)",
+            country_hex: Some("7"),
+            ecc_hex: Some("E2"),
+        },
+        CountryItem {
+            label: "Custom (enter manually)",
+            country_hex: None,
+            ecc_hex: None,
+        },
+    ]
 }
 
 fn color_bg() -> Color {
@@ -198,6 +231,8 @@ pub enum Message {
     PsAltListChanged(String),
     PsAltIntervalChanged(String),
     ApplyPsAlternates,
+    CountrySelected(CountryItem),
+    GenerateRandomPi,
     PresetSelected(String),
     PresetNameChanged(String),
     SavePreset,
@@ -232,6 +267,8 @@ pub enum Message {
     RadioDnsCopyBearer,
     RadioDnsCopyDnsBundle,
     RadioDnsCopyCname,
+    OpenLicense,
+    CopyPi,
     RefreshDevices,
     InputSelected(String),
     OutputSelected(String),
@@ -252,6 +289,8 @@ pub struct App {
     di_dynamic: bool,
     pty_items: Vec<PtyItem>,
     pty_selected: PtyItem,
+    country_items: Vec<CountryItem>,
+    country_selected: CountryItem,
     ab_flag: bool,
     ab_auto: bool,
     ct_enabled: bool,
@@ -343,6 +382,12 @@ impl Default for App {
             di_dynamic: false,
             pty_items: pty_items(),
             pty_selected: PtyItem { code: 10, label: "Pop music" },
+            country_items: country_items(),
+            country_selected: CountryItem {
+                label: "Tunisia (7 / E2)",
+                country_hex: Some("7"),
+                ecc_hex: Some("E2"),
+            },
             ab_flag: false,
             ab_auto: true,
             ct_enabled: true,
@@ -780,6 +825,32 @@ impl iced::Application for App {
                 self.ps_alt_list_text = v;
                 Command::none()
             }
+            Message::CountrySelected(item) => {
+                self.country_selected = item.clone();
+                if let Some(country) = item.country_hex {
+                    self.pi_country_hex = country.to_string();
+                }
+                if let Some(ecc) = item.ecc_hex {
+                    self.ecc_hex = ecc.to_string();
+                }
+                Command::none()
+            }
+            Message::GenerateRandomPi => {
+                let country_hex = self.country_selected.country_hex.unwrap_or(self.pi_country_hex.trim());
+                let country = u16::from_str_radix(country_hex.trim_start_matches("0x"), 16).unwrap_or(0x7);
+                let area = rand::thread_rng().gen_range(0u16..=0xF);
+                let program = rand::thread_rng().gen_range(0u16..=0xFF);
+                let pi = (country << 12) | (area << 8) | program;
+                self.pi_country_hex = format!("{:X}", country);
+                self.pi_area_hex = format!("{:X}", area);
+                self.pi_program_hex = format!("{:02X}", program);
+                self.pi_hex = format!("{:04X}", pi);
+                if let Some(engine) = &self.engine {
+                    engine.update_pi(pi);
+                }
+                self.status = "Random PI generated (testing only)".to_string();
+                Command::none()
+            }
             Message::PsAltIntervalChanged(v) => {
                 self.ps_alt_interval = v;
                 Command::none()
@@ -1102,6 +1173,24 @@ impl iced::Application for App {
                 }
                 Command::none()
             }
+            Message::OpenLicense => {
+                let license_path = std::env::current_dir()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    .join("LICENSE");
+                if let Err(e) = open_in_file_manager(&license_path) {
+                    self.status = format!("Open LICENSE error: {}", e);
+                }
+                Command::none()
+            }
+            Message::CopyPi => {
+                let pi = self.pi_hex.trim();
+                if pi.is_empty() {
+                    self.status = "PI is empty".to_string();
+                    return Command::none();
+                }
+                self.status = "PI copied".to_string();
+                Command::batch(vec![iced::clipboard::write(pi.to_string())])
+            }
             Message::RadioDnsCopySrv => {
                 let srv_line = build_srv_record_line(&self.radiodns_broadcaster_fqdn, &self.radiodns_srv_host, &self.radiodns_srv_port);
                 self.status = "SRV record copied".to_string();
@@ -1257,6 +1346,8 @@ impl iced::Application for App {
             tab_button("Meters", Tab::Meters),
             tab_button("Export", Tab::Export),
             tab_button("RadioDNS", Tab::RadioDns),
+            tab_button("About", Tab::About),
+            tab_button("License", Tab::License),
         ]
         .spacing(10)
         .align_items(Alignment::Center);
@@ -1386,11 +1477,18 @@ impl iced::Application for App {
             )
         };
 
+        let pi_preview = build_pi_from_parts(&self.pi_country_hex, &self.pi_area_hex, &self.pi_program_hex, &self.ecc_hex)
+            .map(|pi| format!("{:04X}", pi))
+            .unwrap_or_else(|_| "—".to_string());
+
         let rds_identity_card = card(
             "Identity + DI",
             column![
-                text("PI default uses Tunisia country code 7 (0x7xxx). Replace with your assigned PI.").style(color_muted()),
+                text("PI (Program Identification) should come from your regulator. Use this helper to format a valid PI from parts.").style(color_muted()),
+                text("Tunisia example: country code 7, ECC E2. For other countries, enter your assigned values.").style(color_muted()),
                 row![
+                    text("Country preset:"),
+                    pick_list(self.country_items.clone(), Some(self.country_selected.clone()), Message::CountrySelected),
                     text("PI builder:"),
                     text_input("7", &self.pi_country_hex).on_input(Message::CountryCodeChanged),
                     text_input("2", &self.pi_area_hex).on_input(Message::AreaCodeChanged),
@@ -1398,12 +1496,25 @@ impl iced::Application for App {
                     button("Apply PI")
                         .on_press(Message::ApplyPiFromParts)
                         .style(theme::Button::Custom(Box::new(PrimaryButton))),
+                    button("Copy PI")
+                        .on_press(Message::CopyPi)
+                        .style(theme::Button::Custom(Box::new(GhostButton))),
+                    button("Random PI")
+                        .on_press(Message::GenerateRandomPi)
+                        .style(theme::Button::Custom(Box::new(GhostButton))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
+                    text(format!("PI preview: {}", pi_preview)).style(color_muted()),
+                ]
+                .spacing(10)
+                .align_items(Alignment::Center),
+                text("Random PI is for testing only. For production, use the code assigned by your regulator.").style(color_muted()),
+                row![
                     text("ECC (hex):"),
                     text_input("E2", &self.ecc_hex).on_input(Message::EccChanged),
+                    text("ECC identifies country in RDS. Leave default if unknown.").style(color_muted()),
                     text("DI:"),
                     checkbox("Stereo", self.di_stereo, Message::DiStereoChanged),
                     checkbox("Artificial head", self.di_artificial, Message::DiArtificialChanged),
@@ -1821,6 +1932,74 @@ impl iced::Application for App {
             .align_items(Alignment::Start),
         ];
 
+        let about_tab = column![
+            card(
+                "About Pulse FM",
+                column![
+                    text("Pulse FM RDS Encoder is a cross‑platform MPX generator with RDS tools and a live audio pipeline.").style(color_muted()),
+                    text("Use it to generate MPX for analysis, streaming to 192 kHz devices, or offline WAV export.").style(color_muted()),
+                    text("It does not transmit RF and is intended for baseband audio only.").style(color_muted()),
+                ]
+                .spacing(6),
+            ),
+            card(
+                "Developer",
+                column![
+                    text("Hsouna Zinoubi").style(color_text()),
+                    text("BOUZIDFM").style(color_muted()),
+                    text("imhsouna@gmail.com").style(color_muted()),
+                ]
+                .spacing(4),
+            ),
+            card(
+                "Quick Tips",
+                column![
+                    text("• Select an output device that supports 192 kHz float32.").style(color_muted()),
+                    text("• Use the Audio tab to refresh device lists.").style(color_muted()),
+                    text("• RadioDNS tab can generate SI.xml and logos.").style(color_muted()),
+                ]
+                .spacing(4),
+            ),
+        ]
+        .spacing(16);
+
+        let license_path = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join("LICENSE");
+        let license_text = fs::read_to_string(&license_path)
+            .unwrap_or_else(|_| "LICENSE file not found in repository root.".to_string());
+        let license_tab = column![
+            card(
+                "License",
+                column![
+                    text("This project is licensed under the terms in the LICENSE file.").style(color_muted()),
+                    text(format!("Path: {}", license_path.display())).style(color_muted()),
+                    button("Open LICENSE")
+                        .style(theme::Button::Custom(Box::new(GhostButton)))
+                        .on_press(Message::OpenLicense),
+                ]
+                .spacing(6),
+            ),
+            card(
+                "License Text",
+                column![
+                    scrollable(text(license_text).style(color_muted()))
+                        .height(Length::Fill)
+                        .width(Length::Fill)
+                ]
+                .spacing(6),
+            ),
+            card(
+                "Legal Notice",
+                column![
+                    text("Generating or transmitting RF without a license is illegal in many jurisdictions.").style(color_muted()),
+                    text("This app only generates baseband audio (MPX) and does not transmit.").style(color_muted()),
+                ]
+                .spacing(6),
+            ),
+        ]
+        .spacing(16);
+
         let status_pill = if self.engine.is_some() {
             pill("LIVE", color_live(), Color::from_rgb8(6, 24, 19))
         } else {
@@ -1905,6 +2084,8 @@ impl iced::Application for App {
             Tab::Meters => meters_full.into(),
             Tab::Export => export_card.into(),
             Tab::RadioDns => radiodns_tab.into(),
+            Tab::About => about_tab.into(),
+            Tab::License => license_tab.into(),
         };
 
         let content = column![
