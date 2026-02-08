@@ -29,7 +29,12 @@ build_windows_msvc() {
 
 build_linux_gnu() {
   local target="$1"
+  local toolchain="stable-x86_64-unknown-linux-gnu"
   if command -v cross >/dev/null 2>&1; then
+    if ! rustup toolchain list | grep -q "^${toolchain}"; then
+      echo "[setup] ${toolchain}"
+      rustup toolchain add "${toolchain}" --profile minimal --force-non-host
+    fi
     echo "[build] ${target} (cross + docker)"
     cross build --release --target "${target}"
     return

@@ -86,6 +86,11 @@ cargo install cross
 
 Linux cross‑compile uses `cross` (Docker) to avoid ALSA `pkg-config` sysroot issues.
 Make sure Docker Desktop is running before building Linux targets.
+If you see a toolchain error, install the Linux toolchain once:
+
+```bash
+rustup toolchain add stable-x86_64-unknown-linux-gnu --profile minimal --force-non-host
+```
 
 ## Troubleshooting
 - **No audio devices**: click **Refresh** in the Audio tab.
