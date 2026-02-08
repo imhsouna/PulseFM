@@ -62,8 +62,9 @@ jobs:
           mkdir -p dist
           BIN=target/${{ matrix.target }}/release/pulse-fm-rds-encoder
           cp "$BIN" dist/
+          ./scripts/macos_bundle.sh ${{ matrix.target }}
           cd dist
-          zip -r pulse-fm-rds-encoder-${{ matrix.target }}.zip pulse-fm-rds-encoder
+          zip -r pulse-fm-rds-encoder-${{ matrix.target }}.zip pulse-fm-rds-encoder PulseFM.app
 
       - name: Package (Windows)
         if: startsWith(matrix.os, 'windows')
