@@ -1,13 +1,16 @@
 use iced::widget::{button, checkbox, column, container, pick_list, progress_bar, row, scrollable, slider, text, text_input, Column};
 use iced::widget::button as button_widget;
 use iced::widget::container as container_widget;
+use iced::widget::slider as slider_widget;
+use iced::widget::text_input as text_input_widget;
+use iced::widget::progress_bar as progress_bar_widget;
+use iced::widget::scrollable as scrollable_widget;
 use iced::{Alignment, Background, Command, Element, Length, Theme};
 use iced::theme;
 use iced::Event;
 use iced::window;
 use serde::{Deserialize, Serialize};
 use rand::Rng;
-use image::{GenericImageView, Rgba, RgbaImage};
 use std::fs;
 use std::path::PathBuf;
 use iced::widget::canvas::{Canvas, Frame, Geometry, Path, Program, Stroke, Text};
@@ -45,9 +48,7 @@ pub(crate) enum Tab {
     Processing,
     Meters,
     Export,
-    RadioDns,
     About,
-    License,
 }
 
 impl std::fmt::Display for Tab {
@@ -59,9 +60,7 @@ impl std::fmt::Display for Tab {
             Tab::Processing => write!(f, "Processing"),
             Tab::Meters => write!(f, "Meters"),
             Tab::Export => write!(f, "Export"),
-            Tab::RadioDns => write!(f, "RadioDNS"),
             Tab::About => write!(f, "About"),
-            Tab::License => write!(f, "License"),
         }
     }
 }
@@ -145,43 +144,51 @@ fn country_items() -> Vec<CountryItem> {
 }
 
 fn color_bg() -> Color {
-    Color::from_rgb8(10, 12, 16)
+    Color::from_rgb8(5, 7, 15)
 }
 
 fn color_surface() -> Color {
-    Color::from_rgb8(20, 26, 34)
+    Color::from_rgb8(13, 18, 30)
 }
 
 fn color_surface_alt() -> Color {
-    Color::from_rgb8(26, 34, 44)
+    Color::from_rgb8(19, 26, 42)
 }
 
 fn color_border() -> Color {
-    Color::from_rgb8(40, 52, 66)
+    Color::from_rgb8(35, 48, 75)
 }
 
 fn color_text() -> Color {
-    Color::from_rgb8(236, 242, 248)
+    Color::from_rgb8(240, 244, 252)
 }
 
 fn color_muted() -> Color {
-    Color::from_rgb8(150, 168, 186)
+    Color::from_rgb8(120, 145, 180)
 }
 
 fn color_accent() -> Color {
-    Color::from_rgb8(34, 211, 238)
+    Color::from_rgb8(56, 189, 248)
 }
 
 fn color_accent_warm() -> Color {
-    Color::from_rgb8(249, 115, 22)
+    Color::from_rgb8(251, 146, 60)
 }
 
 fn color_live() -> Color {
-    Color::from_rgb8(16, 185, 129)
+    Color::from_rgb8(52, 211, 153)
 }
 
 fn color_danger() -> Color {
-    Color::from_rgb8(239, 68, 68)
+    Color::from_rgb8(248, 113, 113)
+}
+
+fn color_gradient_end() -> Color {
+    Color::from_rgb8(168, 85, 247)
+}
+
+fn rgba8f(r: u8, g: u8, b: u8, a: f32) -> Color {
+    Color::from_rgba(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, a)
 }
 
 #[derive(Debug, Clone)]
@@ -251,24 +258,7 @@ pub enum Message {
     OutputChanged(String),
     Generate,
     Generated(Result<(), String>),
-    GenerateRadioDnsPack,
-    RadioDnsGenerated(Result<String, String>),
-    RadioDnsDomainChanged(String),
-    RadioDnsLogoPathChanged(String),
-    RadioDnsSrvHostChanged(String),
-    RadioDnsSrvPortChanged(String),
-    RadioDnsBroadcasterChanged(String),
-    RadioDnsBrowseLogo,
-    RadioDnsLogoPicked(Option<String>),
-    RadioDnsOpenFolder,
-    RadioDnsValidatePack,
-    RadioDnsValidationComplete(Result<String, String>),
-    RadioDnsOpenSiXml,
-    RadioDnsCopySrv,
-    RadioDnsCopyFqdn,
-    RadioDnsCopyBearer,
-    RadioDnsCopyDnsBundle,
-    RadioDnsCopyCname,
+
     CopyPi,
     WindowResized(u32, u32),
     NoOp,
@@ -355,15 +345,7 @@ pub struct App {
     tab_selected: Tab,
     status: String,
     generating: bool,
-    radiodns_generating: bool,
-    radiodns_last_output: Option<String>,
-    radiodns_domain: String,
-    radiodns_logo_path: String,
-    radiodns_srv_host: String,
-    radiodns_srv_port: String,
-    radiodns_broadcaster_fqdn: String,
-    radiodns_validation: Option<String>,
-    radiodns_autofill_srv_host: bool,
+
     input_devices: Vec<String>,
     output_devices: Vec<String>,
     selected_input: Option<String>,
@@ -453,15 +435,7 @@ impl Default for App {
             tab_selected: Tab::Dashboard,
             status: "Idle".to_string(),
             generating: false,
-            radiodns_generating: false,
-            radiodns_last_output: None,
-            radiodns_domain: "https://YOUR_DOMAIN".to_string(),
-            radiodns_logo_path: "".to_string(),
-            radiodns_srv_host: "radio.your-domain.com".to_string(),
-            radiodns_srv_port: "80".to_string(),
-            radiodns_broadcaster_fqdn: "".to_string(),
-            radiodns_validation: None,
-            radiodns_autofill_srv_host: true,
+
             input_devices: Vec::new(),
             output_devices: Vec::new(),
             selected_input: None,
@@ -1077,113 +1051,7 @@ impl iced::Application for App {
                 }
                 Command::none()
             }
-            Message::GenerateRadioDnsPack => {
-                if self.radiodns_generating {
-                    return Command::none();
-                }
 
-                let ps = self.ps.clone();
-                let rt = self.rt.clone();
-                let freq = self.frequency_mhz.clone();
-                let pi = self.pi_hex.clone();
-                let ecc = self.ecc_hex.clone();
-                let domain = self.radiodns_domain.clone();
-                let logo_path = self.radiodns_logo_path.clone();
-                let srv_host = self.radiodns_srv_host.clone();
-                let srv_port = self.radiodns_srv_port.clone();
-                let broadcaster = self.radiodns_broadcaster_fqdn.clone();
-
-                self.status = "Generating RadioDNS pack...".to_string();
-                self.radiodns_generating = true;
-
-                Command::perform(
-                    async move { generate_radiodns_pack(ps, rt, freq, pi, ecc, domain, logo_path, srv_host, srv_port, broadcaster) },
-                    Message::RadioDnsGenerated,
-                )
-            }
-            Message::RadioDnsGenerated(result) => {
-                self.radiodns_generating = false;
-                match result {
-                    Ok(path) => {
-                        self.radiodns_last_output = Some(path);
-                        self.status = "RadioDNS pack generated".to_string();
-                        let base_dir = std::env::current_dir()
-                            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                            .join("radiodns");
-                        let _ = open_in_file_manager(&base_dir);
-                    }
-                    Err(e) => self.status = format!("RadioDNS error: {}", e),
-                }
-                Command::none()
-            }
-            Message::RadioDnsDomainChanged(v) => {
-                self.radiodns_domain = v;
-                if self.radiodns_autofill_srv_host {
-                    if let Some(host) = derive_host_from_base_url(&self.radiodns_domain) {
-                        if self.radiodns_srv_host.trim().is_empty()
-                            || self.radiodns_srv_host == "radio.your-domain.com"
-                        {
-                            self.radiodns_srv_host = format!("radio.{host}");
-                        }
-                    }
-                }
-                Command::none()
-            }
-            Message::RadioDnsLogoPathChanged(v) => {
-                self.radiodns_logo_path = v;
-                Command::none()
-            }
-            Message::RadioDnsSrvHostChanged(v) => {
-                self.radiodns_srv_host = v;
-                Command::none()
-            }
-            Message::RadioDnsSrvPortChanged(v) => {
-                self.radiodns_srv_port = v;
-                Command::none()
-            }
-            Message::RadioDnsBroadcasterChanged(v) => {
-                self.radiodns_broadcaster_fqdn = v;
-                Command::none()
-            }
-            Message::RadioDnsBrowseLogo => Command::perform(
-                async {
-                    rfd::AsyncFileDialog::new()
-                        .add_filter("Images", &["png", "jpg", "jpeg"])
-                        .pick_file()
-                        .await
-                        .map(|f| f.path().display().to_string())
-                },
-                Message::RadioDnsLogoPicked,
-            ),
-            Message::RadioDnsLogoPicked(path) => {
-                if let Some(path) = path {
-                    self.radiodns_logo_path = path;
-                }
-                Command::none()
-            }
-            Message::RadioDnsOpenFolder => {
-                let base_dir = std::env::current_dir()
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                    .join("radiodns");
-                if let Err(e) = fs::create_dir_all(&base_dir) {
-                    self.status = format!("RadioDNS folder error: {}", e);
-                    return Command::none();
-                }
-                if let Err(e) = open_in_file_manager(&base_dir) {
-                    self.status = format!("Open folder error: {}", e);
-                }
-                Command::none()
-            }
-            Message::RadioDnsOpenSiXml => {
-                let si_path = std::env::current_dir()
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                    .join("radiodns")
-                    .join("SI.xml");
-                if let Err(e) = open_in_file_manager(&si_path) {
-                    self.status = format!("Open SI.xml error: {}", e);
-                }
-                Command::none()
-            }
             Message::CopyPi => {
                 let pi = self.pi_hex.trim();
                 if pi.is_empty() {
@@ -1198,48 +1066,7 @@ impl iced::Application for App {
                 Command::none()
             }
             Message::NoOp => Command::none(),
-            Message::RadioDnsCopySrv => {
-                let srv_line = build_srv_record_line(&self.radiodns_broadcaster_fqdn, &self.radiodns_srv_host, &self.radiodns_srv_port);
-                self.status = "SRV record copied".to_string();
-                Command::batch(vec![iced::clipboard::write(srv_line)])
-            }
-            Message::RadioDnsCopyFqdn => {
-                let fqdn = self.radiodns_fm_strings().0.unwrap_or_else(|| "—".to_string());
-                self.status = "FQDN copied".to_string();
-                Command::batch(vec![iced::clipboard::write(fqdn)])
-            }
-            Message::RadioDnsCopyBearer => {
-                let bearer = self.radiodns_fm_strings().1.unwrap_or_else(|| "—".to_string());
-                self.status = "Bearer copied".to_string();
-                Command::batch(vec![iced::clipboard::write(bearer)])
-            }
-            Message::RadioDnsCopyDnsBundle => {
-                let (fqdn, _bearer, _lookup, _warning) = self.radiodns_fm_strings();
-                let bundle = build_dns_bundle(
-                    fqdn.as_deref(),
-                    &self.radiodns_broadcaster_fqdn,
-                    &self.radiodns_srv_host,
-                    &self.radiodns_srv_port,
-                );
-                self.status = "DNS bundle copied".to_string();
-                Command::batch(vec![iced::clipboard::write(bundle)])
-            }
-            Message::RadioDnsCopyCname => {
-                let (fqdn, _bearer, _lookup, _warning) = self.radiodns_fm_strings();
-                let cname = build_cname_line(fqdn.as_deref(), &self.radiodns_broadcaster_fqdn);
-                self.status = "CNAME copied".to_string();
-                Command::batch(vec![iced::clipboard::write(cname)])
-            }
-            Message::RadioDnsValidatePack => {
-                Command::perform(async move { validate_radiodns_pack() }, Message::RadioDnsValidationComplete)
-            }
-            Message::RadioDnsValidationComplete(result) => {
-                match result {
-                    Ok(msg) => self.radiodns_validation = Some(msg),
-                    Err(e) => self.radiodns_validation = Some(format!("Validation failed: {}", e)),
-                }
-                Command::none()
-            }
+
             Message::RefreshDevices => {
                 self.refresh_devices();
                 Command::none()
@@ -1355,9 +1182,7 @@ impl iced::Application for App {
             tab_button("Processing", Tab::Processing),
             tab_button("Meters", Tab::Meters),
             tab_button("Export", Tab::Export),
-            tab_button("RadioDNS", Tab::RadioDns),
             tab_button("About", Tab::About),
-            tab_button("License", Tab::License),
         ]
         .spacing(10)
         .align_items(Alignment::Center);
@@ -1377,7 +1202,7 @@ impl iced::Application for App {
                     .align_items(Alignment::Center),
                     row![
                         text("Name:"),
-                        text_input("Preset name", &self.preset_name).on_input(Message::PresetNameChanged),
+                        text_input("Preset name", &self.preset_name).on_input(Message::PresetNameChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                         button("Save")
                             .style(theme::Button::Custom(Box::new(PrimaryButton)))
                             .on_press(Message::SavePreset),
@@ -1457,19 +1282,19 @@ impl iced::Application for App {
             column![
                 row![
                     text("PS:"),
-                    text_input("BOUZIDFM", &self.ps).on_input(Message::PsChanged),
+                    text_input("BOUZIDFM", &self.ps).on_input(Message::PsChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text("RT:"),
-                    text_input("BOUZIDFM Sidi Bouzid 98.0 MHz", &self.rt).on_input(Message::RtChanged),
+                    text_input("BOUZIDFM Sidi Bouzid 98.0 MHz", &self.rt).on_input(Message::RtChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text("PI (hex):"),
-                    text_input("7200", &self.pi_hex).on_input(Message::PiChanged),
+                    text_input("7200", &self.pi_hex).on_input(Message::PiChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     checkbox("TP", self.tp, Message::TpChanged),
                     checkbox("TA", self.ta, Message::TaChanged),
                     checkbox("Music (MS)", self.ms, Message::MsChanged),
@@ -1503,9 +1328,9 @@ impl iced::Application for App {
                         text("Country preset:"),
                         pick_list(self.country_items.clone(), Some(self.country_selected.clone()), Message::CountrySelected),
                         text("PI builder:"),
-                        text_input("7", &self.pi_country_hex).on_input(Message::CountryCodeChanged),
-                        text_input("2", &self.pi_area_hex).on_input(Message::AreaCodeChanged),
-                        text_input("00", &self.pi_program_hex).on_input(Message::ProgramRefChanged),
+                        text_input("7", &self.pi_country_hex).on_input(Message::CountryCodeChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
+                        text_input("2", &self.pi_area_hex).on_input(Message::AreaCodeChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
+                        text_input("00", &self.pi_program_hex).on_input(Message::ProgramRefChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                         button("Apply PI")
                             .on_press(Message::ApplyPiFromParts)
                             .style(theme::Button::Custom(Box::new(PrimaryButton))),
@@ -1526,7 +1351,7 @@ impl iced::Application for App {
                     text("Random PI is for testing only. For production, use the code assigned by your regulator.").style(color_muted()),
                     row![
                         text("ECC (hex):"),
-                        text_input("E2", &self.ecc_hex).on_input(Message::EccChanged),
+                        text_input("E2", &self.ecc_hex).on_input(Message::EccChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                         text("ECC identifies country in RDS. Leave default if unknown.").style(color_muted()),
                         text("DI:"),
                         checkbox("Stereo", self.di_stereo, Message::DiStereoChanged),
@@ -1545,11 +1370,11 @@ impl iced::Application for App {
             column![
                 row![
                     text("Mix 0A/2A/4A:"),
-                    text_input("4", &self.group_0a).on_input(Message::Group0aChanged),
-                    text_input("1", &self.group_2a).on_input(Message::Group2aChanged),
-                    text_input("0", &self.group_4a).on_input(Message::Group4aChanged),
+                    text_input("4", &self.group_0a).on_input(Message::Group0aChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
+                    text_input("1", &self.group_2a).on_input(Message::Group2aChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
+                    text_input("0", &self.group_4a).on_input(Message::Group4aChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     text("CT interval (groups):"),
-                    text_input("0", &self.ct_interval_groups).on_input(Message::CtIntervalGroupsChanged),
+                    text_input("0", &self.ct_interval_groups).on_input(Message::CtIntervalGroupsChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     button("Apply")
                         .on_press(Message::ApplyGroupMix)
                         .style(theme::Button::Custom(Box::new(PrimaryButton))),
@@ -1558,9 +1383,9 @@ impl iced::Application for App {
                 .align_items(Alignment::Center),
                 row![
                     text("Alternate PS:"),
-                    text_input("ALT1|ALT2", &self.ps_alt_list_text).on_input(Message::PsAltListChanged),
+                    text_input("ALT1|ALT2", &self.ps_alt_list_text).on_input(Message::PsAltListChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     text("Interval (groups):"),
-                    text_input("0", &self.ps_alt_interval).on_input(Message::PsAltIntervalChanged),
+                    text_input("0", &self.ps_alt_interval).on_input(Message::PsAltIntervalChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     button("Apply PS")
                         .on_press(Message::ApplyPsAlternates)
                         .style(theme::Button::Custom(Box::new(PrimaryButton))),
@@ -1575,21 +1400,21 @@ impl iced::Application for App {
             column![
                 row![
                     text("Ref freq (MHz):"),
-                    text_input("98.0", &self.frequency_mhz).on_input(Message::FrequencyChanged),
+                    text_input("98.0", &self.frequency_mhz).on_input(Message::FrequencyChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text("AF list (MHz):"),
-                    text_input("98.0", &self.af_list_text).on_input(Message::AfListChanged),
+                    text_input("98.0", &self.af_list_text).on_input(Message::AfListChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text("Generate from:"),
-                    text_input("Base", &self.af_base).on_input(Message::AfBaseChanged),
-                    text_input("Spacing", &self.af_spacing).on_input(Message::AfSpacingChanged),
-                    text_input("Count", &self.af_count).on_input(Message::AfCountChanged),
+                    text_input("Base", &self.af_base).on_input(Message::AfBaseChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
+                    text_input("Spacing", &self.af_spacing).on_input(Message::AfSpacingChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
+                    text_input("Count", &self.af_count).on_input(Message::AfCountChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     button("Generate")
                         .on_press(Message::AfGenerate)
                         .style(theme::Button::Custom(Box::new(GhostButton))),
@@ -1599,7 +1424,7 @@ impl iced::Application for App {
                 if let Some(ref warning) = self.af_warning {
                     text(warning).style(color_accent_warm())
                 } else {
-                    text("")
+                    text(" ").style(color_muted())
                 },
             ],
         );
@@ -1609,17 +1434,17 @@ impl iced::Application for App {
             column![
                 row![
                     checkbox("PS scroll", self.ps_scroll_enabled, Message::PsScrollEnabled),
-                    text_input("BOUZIDFM", &self.ps_scroll_text).on_input(Message::PsScrollTextChanged),
+                    text_input("BOUZIDFM", &self.ps_scroll_text).on_input(Message::PsScrollTextChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     text(format!("{:.1} cps", self.ps_scroll_cps)),
-                    slider(0.5..=10.0, self.ps_scroll_cps, Message::PsScrollSpeedChanged),
+                    slider(0.5..=10.0, self.ps_scroll_cps, Message::PsScrollSpeedChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     checkbox("RT scroll", self.rt_scroll_enabled, Message::RtScrollEnabled),
-                    text_input("BOUZIDFM Sidi Bouzid 98.0 MHz", &self.rt_scroll_text).on_input(Message::RtScrollTextChanged),
+                    text_input("BOUZIDFM Sidi Bouzid 98.0 MHz", &self.rt_scroll_text).on_input(Message::RtScrollTextChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                     text(format!("{:.1} cps", self.rt_scroll_cps)),
-                    slider(0.5..=10.0, self.rt_scroll_cps, Message::RtScrollSpeedChanged),
+                    slider(0.5..=10.0, self.rt_scroll_cps, Message::RtScrollSpeedChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
@@ -1631,16 +1456,16 @@ impl iced::Application for App {
             column![
                 row![
                     text(format!("Gain {:.2}x", self.output_gain)),
-                    slider(0.5..=2.0, self.output_gain, Message::GainChanged),
+                    slider(0.5..=2.0, self.output_gain, Message::GainChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     checkbox("Limiter", self.limiter_enabled, Message::LimiterEnabled),
                     text(format!("Threshold {:.2}", self.limiter_threshold)),
-                    slider(0.5..=1.0, self.limiter_threshold, Message::LimiterThresholdChanged),
+                    slider(0.5..=1.0, self.limiter_threshold, Message::LimiterThresholdChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                     text(format!("Lookahead {:.1} ms", self.limiter_lookahead_ms)),
-                    slider(0.5..=10.0, self.limiter_lookahead_ms, Message::LimiterLookaheadChanged),
+                    slider(0.5..=10.0, self.limiter_lookahead_ms, Message::LimiterLookaheadChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
@@ -1652,15 +1477,15 @@ impl iced::Application for App {
             column![
                 row![
                     text(format!("Pilot {:.2}", self.pilot_level)),
-                    slider(0.2..=1.5, self.pilot_level, Message::PilotLevelChanged),
+                    slider(0.2..=1.5, self.pilot_level, Message::PilotLevelChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text(format!("RDS {:.2}", self.rds_level)),
-                    slider(0.2..=1.5, self.rds_level, Message::RdsLevelChanged),
+                    slider(0.2..=1.5, self.rds_level, Message::RdsLevelChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                     text(format!("Stereo sep {:.2}", self.stereo_separation)),
-                    slider(0.5..=1.5, self.stereo_separation, Message::StereoSeparationChanged),
+                    slider(0.5..=1.5, self.stereo_separation, Message::StereoSeparationChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
@@ -1679,17 +1504,17 @@ impl iced::Application for App {
                 .align_items(Alignment::Center),
                 row![
                     text(format!("Thr {:.1} dB", self.comp_threshold)),
-                    slider(-30.0..=0.0, self.comp_threshold, Message::CompThresholdChanged),
+                    slider(-30.0..=0.0, self.comp_threshold, Message::CompThresholdChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                     text(format!("Ratio {:.1}", self.comp_ratio)),
-                    slider(1.0..=6.0, self.comp_ratio, Message::CompRatioChanged),
+                    slider(1.0..=6.0, self.comp_ratio, Message::CompRatioChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text(format!("Attack {:.3}s", self.comp_attack)),
-                    slider(0.001..=0.1, self.comp_attack, Message::CompAttackChanged),
+                    slider(0.001..=0.1, self.comp_attack, Message::CompAttackChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                     text(format!("Release {:.2}s", self.comp_release)),
-                    slider(0.05..=1.0, self.comp_release, Message::CompReleaseChanged),
+                    slider(0.05..=1.0, self.comp_release, Message::CompReleaseChanged).style(theme::Slider::Custom(Box::new(CustomSlider))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
@@ -1702,17 +1527,17 @@ impl iced::Application for App {
                 column![
                     row![
                         text(format!("RMS {:.2}", self.meter_rms)),
-                        progress_bar(0.0..=1.0, self.meter_rms),
+                        progress_bar(0.0..=1.0, self.meter_rms).style(theme::ProgressBar::Custom(Box::new(CustomProgressBar))),
                         text(format!("Peak {:.2}", self.meter_peak)),
-                        progress_bar(0.0..=1.0, self.meter_peak),
+                        progress_bar(0.0..=1.0, self.meter_peak).style(theme::ProgressBar::Custom(Box::new(PeakyProgressBar))),
                     ]
                     .spacing(10)
                     .align_items(Alignment::Center),
                     row![
                         text(format!("Pilot 19 kHz {:.2}", self.meter_pilot)),
-                        progress_bar(0.0..=1.0, self.meter_pilot),
+                        progress_bar(0.0..=1.0, self.meter_pilot).style(theme::ProgressBar::Custom(Box::new(CustomProgressBar))),
                         text(format!("RDS 57 kHz {:.2}", self.meter_rds)),
-                        progress_bar(0.0..=1.0, self.meter_rds),
+                        progress_bar(0.0..=1.0, self.meter_rds).style(theme::ProgressBar::Custom(Box::new(WarmProgressBar))),
                     ]
                     .spacing(10)
                     .align_items(Alignment::Center),
@@ -1724,18 +1549,18 @@ impl iced::Application for App {
             "MPX Meter",
             column![
                 row![
-                    text(format!("RMS {:.2}", self.meter_rms)),
-                    progress_bar(0.0..=1.0, self.meter_rms),
-                    text(format!("Peak {:.2}", self.meter_peak)),
-                    progress_bar(0.0..=1.0, self.meter_peak),
+                    text(format!("RMS {:.2}", self.meter_rms)).style(color_accent()),
+                    progress_bar(0.0..=1.0, self.meter_rms).style(theme::ProgressBar::Custom(Box::new(CustomProgressBar))),
+                    text(format!("Peak {:.2}", self.meter_peak)).style(color_danger()),
+                    progress_bar(0.0..=1.0, self.meter_peak).style(theme::ProgressBar::Custom(Box::new(PeakyProgressBar))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
-                    text(format!("Pilot 19 kHz {:.2}", self.meter_pilot)),
-                    progress_bar(0.0..=1.0, self.meter_pilot),
-                    text(format!("RDS 57 kHz {:.2}", self.meter_rds)),
-                    progress_bar(0.0..=1.0, self.meter_rds),
+                    text("Pilot 19 kHz").style(color_accent_warm()),
+                    progress_bar(0.0..=1.0, self.meter_pilot).style(theme::ProgressBar::Custom(Box::new(WarmProgressBar))),
+                    text("RDS 57 kHz").style(color_accent()),
+                    progress_bar(0.0..=1.0, self.meter_rds).style(theme::ProgressBar::Custom(Box::new(CustomProgressBar))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
@@ -1773,19 +1598,19 @@ impl iced::Application for App {
             column![
                 row![
                     text("Duration (sec):"),
-                    text_input("10", &self.duration).on_input(Message::DurationChanged),
+                    text_input("10", &self.duration).on_input(Message::DurationChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text("Audio WAV (optional):"),
-                    text_input("", &self.audio_path).on_input(Message::AudioChanged),
+                    text_input("", &self.audio_path).on_input(Message::AudioChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
                 row![
                     text("Output WAV:"),
-                    text_input("mpx.wav", &self.output_path).on_input(Message::OutputChanged),
+                    text_input("mpx.wav", &self.output_path).on_input(Message::OutputChanged).style(theme::TextInput::Custom(Box::new(CustomTextInput))),
                 ]
                 .spacing(10)
                 .align_items(Alignment::Center),
@@ -1801,150 +1626,6 @@ impl iced::Application for App {
                 },
             ],
         );
-
-        let (rd_fqdn, rd_bearer, rd_lookup, rd_warning) = self.radiodns_fm_strings();
-
-        let radiodns_info = card(
-            "Project Logo (Station Logos)",
-            column![
-                text("RadioDNS Project Logo uses an SI.xml file to publish your station names, descriptions, and logos.").style(color_muted()),
-                text("Required logo set (PNG): 32x32, 32x112, 128x128, 320x240, 600x600.").style(color_muted()),
-                text("1) Create SI.xml with short/medium names, descriptions, and 5 logo sizes.").style(color_muted()),
-                text("2) Host SI.xml at: /radiodns/spi/3.1/SI.xml (case sensitive).").style(color_muted()),
-                text("3) Add a _radioepg._tcp SRV record pointing to your web server.").style(color_muted()),
-                text("4) Register your stations with RadioDNS.").style(color_muted()),
-                text("5) In SI.xml, include a bearer like: fm:<gcc>.<pi>.<freq>.").style(color_muted()),
-                text("Automation: this app can generate SI.xml and placeholder logos into ./radiodns/.").style(color_muted()),
-            ]
-            .spacing(6),
-        );
-
-        let srv_line = build_srv_record_line(
-            &self.radiodns_broadcaster_fqdn,
-            &self.radiodns_srv_host,
-            &self.radiodns_srv_port,
-        );
-
-        let cname_line = build_cname_line(rd_fqdn.as_deref(), &self.radiodns_broadcaster_fqdn);
-
-        let radiodns_helper = card(
-            "RadioDNS Helper (FM)",
-            column![
-                text("Uses your Frequency, PI, and ECC fields to build the FM RadioDNS lookup.").style(color_muted()),
-                if let Some(ref warning) = rd_warning {
-                    text(warning).style(color_accent_warm())
-                } else {
-                    text("")
-                },
-                text(format!("FQDN: {}", rd_fqdn.clone().unwrap_or_else(|| "—".to_string()))),
-                text(format!("Bearer: {}", rd_bearer.unwrap_or_else(|| "—".to_string()))),
-                text(format!("Lookup: {}", rd_lookup.unwrap_or_else(|| "—".to_string()))),
-                text("Then lookup SRV on the returned broadcaster FQDN:").style(color_muted()),
-                text("nslookup -type=SRV _radioepg._tcp.<broadcaster-fqdn>").style(color_muted()),
-                text(format!("SRV record: {}", srv_line)).style(color_muted()),
-                text(format!("CNAME: {}", cname_line)).style(color_muted()),
-                row![
-                    button("Copy FQDN")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsCopyFqdn),
-                    button("Copy Bearer")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsCopyBearer),
-                    button("Copy DNS Bundle")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsCopyDnsBundle),
-                    button("Copy CNAME")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsCopyCname),
-                    button("Copy SRV")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsCopySrv),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                if let Some(ref path) = self.radiodns_last_output {
-                    text(format!("Last output: {}", path)).style(color_muted())
-                } else {
-                    text("Last output: —").style(color_muted())
-                },
-                if self.radiodns_generating {
-                    button("Generating...").padding(10).style(theme::Button::Custom(Box::new(GhostButton)))
-                } else {
-                    button("Generate RadioDNS Pack")
-                        .padding(10)
-                        .style(theme::Button::Custom(Box::new(PrimaryButton)))
-                        .on_press(Message::GenerateRadioDnsPack)
-                },
-            ]
-            .spacing(6),
-        );
-
-        let radiodns_automation = card(
-            "Automation Settings",
-            column![
-                row![
-                    text("Base URL:"),
-                    text_input("https://your-domain.com", &self.radiodns_domain).on_input(Message::RadioDnsDomainChanged),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                row![
-                    text("Logo source (optional):"),
-                    text_input("/path/to/logo.png", &self.radiodns_logo_path).on_input(Message::RadioDnsLogoPathChanged),
-                    button("Browse")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsBrowseLogo),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                row![
-                    text("Broadcaster FQDN:"),
-                    text_input("broadcaster.example.com", &self.radiodns_broadcaster_fqdn).on_input(Message::RadioDnsBroadcasterChanged),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                row![
-                    text("SRV target host:"),
-                    text_input("radio.your-domain.com", &self.radiodns_srv_host).on_input(Message::RadioDnsSrvHostChanged),
-                    text("Port:"),
-                    text_input("80", &self.radiodns_srv_port).on_input(Message::RadioDnsSrvPortChanged),
-                    button("Open Folder")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsOpenFolder),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                row![
-                    button("Open SI.xml")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsOpenSiXml),
-                    button("Validate Pack")
-                        .style(theme::Button::Custom(Box::new(PrimaryButton)))
-                        .on_press(Message::RadioDnsValidatePack),
-                    button("Copy SRV")
-                        .style(theme::Button::Custom(Box::new(GhostButton)))
-                        .on_press(Message::RadioDnsCopySrv),
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center),
-                if let Some(ref msg) = self.radiodns_validation {
-                    text(msg).style(color_muted())
-                } else {
-                    text("Validation: —").style(color_muted())
-                },
-                text("If logo source is set, the app will resize and generate all required sizes.").style(color_muted()),
-            ]
-            .spacing(8),
-        );
-
-        let radiodns_tab = column![
-            row![
-                column![radiodns_info, radiodns_automation].spacing(16).width(Length::FillPortion(3)),
-                column![radiodns_helper].spacing(16).width(Length::FillPortion(2)),
-            ]
-            .spacing(16)
-            .align_items(Alignment::Start),
-        ];
 
         let about_tab = column![
             card(
@@ -1970,95 +1651,80 @@ impl iced::Application for App {
                 column![
                     text("• Select an output device that supports 192 kHz float32.").style(color_muted()),
                     text("• Use the Audio tab to refresh device lists.").style(color_muted()),
-                    text("• RadioDNS tab can generate SI.xml and logos.").style(color_muted()),
+
                 ]
                 .spacing(4),
             ),
         ]
         .spacing(16)
-        .width(Length::Fill)
-        .height(Length::Fill);
+        .width(Length::Fill);
 
         let compact = self.window_width < 980.0;
-        let license_text = include_str!("../LICENSE").to_string();
-        let license_tab = column![
-            card(
-                "License",
-                column![
-                    text("This project is licensed under the terms in the LICENSE file.").style(color_muted()),
-                ]
-                .spacing(6),
-            ),
-            if compact {
-                card(
-                    "License Text",
-                    column![
-                        scrollable(text(license_text).style(color_muted()))
-                            .height(Length::Fill)
-                            .width(Length::Fill)
-                    ]
-                    .spacing(6),
-                )
-                .into()
-            } else {
-                Element::from(
-                    row![
-                        container(card(
-                            "License Text",
-                            column![
-                                scrollable(text(license_text).style(color_muted()))
-                                    .height(Length::Fill)
-                                    .width(Length::Fill)
-                            ]
-                            .spacing(6),
-                        ))
-                        .width(Length::FillPortion(3)),
-                        container(card(
-                            "Legal Notice",
-                            column![
-                                text("Generating or transmitting RF without a license is illegal in many jurisdictions.").style(color_muted()),
-                                text("This app only generates baseband audio (MPX) and does not transmit.").style(color_muted()),
-                            ]
-                            .spacing(6),
-                        ))
-                        .width(Length::FillPortion(1)),
-                    ]
-                    .spacing(16),
-                )
-            },
-        ]
-        .spacing(16)
-        .width(Length::Fill)
-        .height(Length::Fill);
 
         let status_pill = if self.engine.is_some() {
-            pill("LIVE", color_live(), Color::from_rgb8(6, 24, 19))
+            pill("● LIVE", color_live(), Color::from_rgb8(6, 24, 19))
         } else {
-            pill("IDLE", color_surface_alt(), color_muted())
+            pill("○ IDLE", color_surface_alt(), color_muted())
         };
+
+        let status_text = text(&self.status).style(color_muted());
 
         let hero = container(
             row![
                 column![
-                    text("Pulse FM").size(30).style(color_text()),
-                    text("RDS Encoder").size(22).style(color_accent()),
-                    text("Live MPX pipeline for macOS • 192 kHz device output").size(14).style(color_muted()),
+                    row![
+                        text("Pulse FM").size(32).style(color_text()),
+                        text("FM").size(32).style(rgba8f(56, 189, 248, 0.6)),
+                    ]
+                    .spacing(2)
+                    .align_items(Alignment::Center),
+                    text("RDS Encoder Studio").size(16).style(rgba8f(168, 85, 247, 0.7)),
+                    text("Live MPX pipeline • 192 kHz • FM/RDS broadcast tools").size(12).style(color_muted()),
                 ]
                 .spacing(4)
                 .width(Length::FillPortion(3)),
                 column![
                     row![
                         status_pill,
-                        text(&self.status).style(color_muted()),
+                        status_text,
                     ]
                     .spacing(10)
                     .align_items(Alignment::Center),
                     row![
-                        text(format!("XRuns {}", self.xrun_count)).style(color_muted()),
-                        text(format!("Buffer {:.0}%", (self.buffer_fill * 100.0).clamp(0.0, 100.0))).style(color_muted()),
-                        text(format!("Latency {:.1} ms", self.latency_ms)).style(color_muted()),
+                        container(
+                            row![
+                                text(format!("{}", self.xrun_count)).size(13).style(color_accent()),
+                                text("XRuns").size(11).style(color_muted()),
+                            ]
+                            .spacing(4)
+                            .align_items(Alignment::Center),
+                        )
+                        .padding([4, 10])
+                        .style(theme::Container::Custom(Box::new(MetricPill))),
+                        text("|").size(11).style(rgba8f(255, 255, 255, 0.06)),
+                        container(
+                            row![
+                                text(format!("{:.0}%", (self.buffer_fill * 100.0).clamp(0.0, 100.0))).size(13).style(color_accent_warm()),
+                                text("Buf").size(11).style(color_muted()),
+                            ]
+                            .spacing(4)
+                            .align_items(Alignment::Center),
+                        )
+                        .padding([4, 10])
+                        .style(theme::Container::Custom(Box::new(MetricPill))),
+                        text("|").size(11).style(rgba8f(255, 255, 255, 0.06)),
+                        container(
+                            row![
+                                text(format!("{:.1}", self.latency_ms)).size(13).style(color_live()),
+                                text("ms").size(11).style(color_muted()),
+                            ]
+                            .spacing(4)
+                            .align_items(Alignment::Center),
+                        )
+                        .padding([4, 10])
+                        .style(theme::Container::Custom(Box::new(MetricPill))),
                     ]
-                    .spacing(14)
+                    .spacing(0)
                     .align_items(Alignment::Center),
                 ]
                 .spacing(8)
@@ -2067,7 +1733,7 @@ impl iced::Application for App {
             .spacing(24)
             .align_items(Alignment::Center),
         )
-        .padding(16)
+        .padding(20)
         .width(Length::Fill)
         .style(theme::Container::from(hero_style));
 
@@ -2159,9 +1825,7 @@ impl iced::Application for App {
             }
             Tab::Meters => meters_full().into(),
             Tab::Export => export_card().into(),
-            Tab::RadioDns => radiodns_tab.into(),
             Tab::About => about_tab.into(),
-            Tab::License => license_tab.into(),
         };
 
         let content = column![
@@ -2171,18 +1835,16 @@ impl iced::Application for App {
         ]
         .spacing(18)
         .padding(24)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_items(Alignment::Start);
+        .width(Length::Fill);
 
         let scroll = scrollable(content)
             .width(Length::Fill)
-            .height(Length::Fill);
+            .height(Length::Fill)
+            .style(theme::Scrollable::Custom(Box::new(HiddenScrollbar)));
 
         container(scroll)
             .width(Length::Fill)
             .height(Length::Fill)
-            .center_x()
             .style(theme::Container::from(body_style))
             .into()
     }
@@ -2204,41 +1866,6 @@ impl App {
             bits |= 0b0001;
         }
         bits
-    }
-
-    fn radiodns_fm_strings(&self) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
-        let freq_mhz = self.frequency_mhz.trim().parse::<f32>().ok();
-        let pi = parse_pi(&self.pi_hex).ok();
-        let ecc = parse_hex_byte(&self.ecc_hex).ok();
-
-        let mut warning = None;
-        if freq_mhz.is_none() {
-            warning = Some("Frequency is invalid. Expected a value like 98.0".to_string());
-        } else if let Some(freq) = freq_mhz {
-            if !(87.6..=107.9).contains(&freq) {
-                warning = Some("Frequency is out of FM range (87.6–107.9 MHz).".to_string());
-            }
-        }
-        if pi.is_none() {
-            warning = Some("PI is invalid. Expected 4 hex digits (e.g., 7200).".to_string());
-        }
-        if ecc.is_none() {
-            warning = Some("ECC is invalid. Expected 2 hex digits (e.g., E2).".to_string());
-        }
-
-        if let (Some(freq), Some(pi), Some(ecc)) = (freq_mhz, pi, ecc) {
-            let freq_int = (freq * 100.0).round() as u32;
-            let freq_str = format!("{:05}", freq_int);
-            let pi_hex = format!("{:04x}", pi);
-            let ecc_hex = format!("{:02x}", ecc);
-            let gcc = format!("{}{}", pi_hex.chars().next().unwrap_or('0'), ecc_hex);
-            let fqdn = format!("{freq}.{pi}.{gcc}.fm.radiodns.org", freq = freq_str, pi = pi_hex, gcc = gcc);
-            let bearer = format!("fm:{gcc}.{pi}.{freq}", gcc = gcc, pi = pi_hex, freq = freq_str);
-            let lookup = format!("nslookup -type=CNAME {fqdn}");
-            return (Some(fqdn), Some(bearer), Some(lookup), warning);
-        }
-
-        (None, None, None, warning)
     }
 
     fn refresh_devices(&mut self) {
@@ -2405,137 +2032,6 @@ fn parse_pi(input: &str) -> Result<u16, String> {
     u16::from_str_radix(t, 16).map_err(|_| "PI must be a 4-hex-digit value".to_string())
 }
 
-fn parse_hex_byte(input: &str) -> Result<u8, String> {
-    let t = input.trim();
-    if t.is_empty() {
-        return Err("Hex byte is required".to_string());
-    }
-    let t = t.strip_prefix("0x").unwrap_or(t);
-    u8::from_str_radix(t, 16).map_err(|_| "Hex must be 2 digits".to_string())
-}
-
-fn generate_radiodns_pack(
-    ps: String,
-    rt: String,
-    frequency_mhz: String,
-    pi_hex: String,
-    ecc_hex: String,
-    domain: String,
-    logo_path: String,
-    srv_host: String,
-    srv_port: String,
-    broadcaster_fqdn: String,
-) -> Result<String, String> {
-    let freq = frequency_mhz.trim().parse::<f32>().map_err(|_| "Frequency is invalid".to_string())?;
-    if !(87.6..=107.9).contains(&freq) {
-        return Err("Frequency is out of FM range (87.6–107.9 MHz).".to_string());
-    }
-    let pi = parse_pi(&pi_hex)?;
-    let ecc = parse_hex_byte(&ecc_hex)?;
-    let base_url = domain.trim();
-    if base_url.is_empty() {
-        return Err("Base URL is required (e.g., https://your-domain.com).".to_string());
-    }
-
-    let freq_int = (freq * 100.0).round() as u32;
-    let freq_str = format!("{:05}", freq_int);
-    let pi_hex_lower = format!("{:04x}", pi);
-    let ecc_hex_lower = format!("{:02x}", ecc);
-    let gcc = format!("{}{}", pi_hex_lower.chars().next().unwrap_or('0'), ecc_hex_lower);
-    let bearer = format!("fm:{gcc}.{pi}.{freq}", gcc = gcc, pi = pi_hex_lower, freq = freq_str);
-    let fqdn = format!("{freq}.{pi}.{gcc}.fm.radiodns.org", freq = freq_str, pi = pi_hex_lower, gcc = gcc);
-
-    let base_dir = std::env::current_dir()
-        .map_err(|e| e.to_string())?
-        .join("radiodns");
-    let logos_dir = base_dir.join("logos");
-    fs::create_dir_all(&logos_dir).map_err(|e| e.to_string())?;
-
-    let station_name = ps.trim();
-    let description = if rt.trim().is_empty() { station_name } else { rt.trim() };
-    let base_url = base_url.trim_end_matches('/');
-    let si_xml = format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<serviceInformation xmlns="http://www.worlddab.org/schemas/spi/31" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.worlddab.org/schemas/spi/31 spi_31.xsd">
-  <services>
-    <service>
-      <name short="{name}" medium="{name}" long="{name}"/>
-      <description short="{desc}" long="{desc}"/>
-      <bearer id="{bearer}"/>
-      <media>
-        <image id="logo_32x32" type="logo_unrestricted" width="32" height="32" mime="image/png">{base}/radiodns/logos/logo_32x32.png</image>
-        <image id="logo_32x112" type="logo_unrestricted" width="32" height="112" mime="image/png">{base}/radiodns/logos/logo_32x112.png</image>
-        <image id="logo_128x128" type="logo_unrestricted" width="128" height="128" mime="image/png">{base}/radiodns/logos/logo_128x128.png</image>
-        <image id="logo_320x240" type="logo_unrestricted" width="320" height="240" mime="image/png">{base}/radiodns/logos/logo_320x240.png</image>
-        <image id="logo_600x600" type="logo_unrestricted" width="600" height="600" mime="image/png">{base}/radiodns/logos/logo_600x600.png</image>
-      </media>
-    </service>
-  </services>
-</serviceInformation>
-"#,
-        name = station_name,
-        desc = description,
-        bearer = bearer,
-        base = base_url,
-    );
-    fs::write(base_dir.join("SI.xml"), si_xml).map_err(|e| e.to_string())?;
-
-    let logo_path = logo_path.trim();
-    let sizes: &[(u32, u32)] = &[(32, 32), (32, 112), (128, 128), (320, 240), (600, 600)];
-    if logo_path.is_empty() {
-        for (w, h) in sizes {
-            let name = format!("logo_{}x{}.png", w, h);
-            let path = logos_dir.join(name);
-            let img = RgbaImage::from_pixel(*w, *h, Rgba([0, 0, 0, 0]));
-            img.save(&path).map_err(|e| e.to_string())?;
-        }
-    } else {
-        let source = image::open(logo_path).map_err(|e| format!("Logo load failed: {}", e))?;
-        for (w, h) in sizes {
-            let name = format!("logo_{}x{}.png", w, h);
-            let path = logos_dir.join(name);
-            let resized = source.resize_exact(*w, *h, image::imageops::FilterType::Lanczos3);
-            resized.save(&path).map_err(|e| e.to_string())?;
-        }
-    }
-
-    let srv_port = if srv_port.trim().is_empty() { "80" } else { srv_port.trim() };
-    let srv_host = srv_host.trim();
-    let srv_line = if broadcaster_fqdn.trim().is_empty() {
-        "Broadcaster FQDN not set. Add it in the UI to generate SRV line.".to_string()
-    } else {
-        format!(
-            "_radioepg._tcp.{broadcaster} 86400 IN SRV 0 0 {port} {host}.",
-            broadcaster = broadcaster_fqdn.trim(),
-            port = srv_port,
-            host = srv_host
-        )
-    };
-
-    let readme = format!(
-        "RadioDNS Pack\n\
-\n\
-Output folder: {dir}\n\
-FM FQDN: {fqdn}\n\
-Bearer: {bearer}\n\
-SRV record: {srv_line}\n\
-\n\
-Next steps:\n\
-1) Verify the Base URL in SI.xml matches your web domain.\n\
-2) Upload SI.xml to /radiodns/spi/3.1/SI.xml (case sensitive).\n\
-3) Upload logos to /radiodns/logos/.\n\
-4) Create _radioepg._tcp SRV record pointing to your web server.\n\
-5) Validate with RadioDNS.\n",
-        dir = base_dir.display(),
-        fqdn = fqdn,
-        bearer = bearer,
-        srv_line = srv_line
-    );
-    fs::write(base_dir.join("README.txt"), readme).map_err(|e| e.to_string())?;
-
-    Ok(base_dir.display().to_string())
-}
-
 fn parse_af_list(input: &str) -> (Vec<f32>, Option<String>) {
     let mut out = Vec::new();
     let mut invalid = false;
@@ -2559,112 +2055,6 @@ fn parse_af_list(input: &str) -> (Vec<f32>, Option<String>) {
         None
     };
     (out, warning)
-}
-
-fn derive_host_from_base_url(base_url: &str) -> Option<String> {
-    let trimmed = base_url.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let without_scheme = trimmed
-        .strip_prefix("https://")
-        .or_else(|| trimmed.strip_prefix("http://"))
-        .unwrap_or(trimmed);
-    let host = without_scheme.split('/').next().unwrap_or("").trim();
-    if host.is_empty() {
-        None
-    } else {
-        Some(host.to_string())
-    }
-}
-
-fn build_srv_record_line(broadcaster_fqdn: &str, srv_host: &str, srv_port: &str) -> String {
-    if broadcaster_fqdn.trim().is_empty() {
-        return "—".to_string();
-    }
-    let port = srv_port.trim();
-    let port = if port.is_empty() { "80" } else { port };
-    let host = srv_host.trim();
-    format!(
-        "_radioepg._tcp.{broadcaster} 86400 IN SRV 0 0 {port} {host}.",
-        broadcaster = broadcaster_fqdn.trim(),
-        port = port,
-        host = host
-    )
-}
-
-fn build_cname_line(fm_fqdn: Option<&str>, broadcaster_fqdn: &str) -> String {
-    let fm_fqdn = match fm_fqdn {
-        Some(v) if !v.trim().is_empty() => v.trim(),
-        _ => return "—".to_string(),
-    };
-    if broadcaster_fqdn.trim().is_empty() {
-        return "—".to_string();
-    }
-    format!("{fm} 86400 IN CNAME {broadcaster}.", fm = fm_fqdn, broadcaster = broadcaster_fqdn.trim())
-}
-
-fn build_dns_bundle(
-    fm_fqdn: Option<&str>,
-    broadcaster_fqdn: &str,
-    srv_host: &str,
-    srv_port: &str,
-) -> String {
-    let cname = build_cname_line(fm_fqdn, broadcaster_fqdn);
-    let srv = build_srv_record_line(broadcaster_fqdn, srv_host, srv_port);
-    format!("{}\n{}", cname, srv)
-}
-
-fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let mut cmd = std::process::Command::new("open");
-    #[cfg(target_os = "windows")]
-    let mut cmd = std::process::Command::new("explorer");
-    #[cfg(target_os = "linux")]
-    let mut cmd = std::process::Command::new("xdg-open");
-
-    let status = cmd.arg(path).status().map_err(|e| e.to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("Command failed with status {:?}", status.code()))
-    }
-}
-
-fn validate_radiodns_pack() -> Result<String, String> {
-    let base_dir = std::env::current_dir()
-        .map_err(|e| e.to_string())?
-        .join("radiodns");
-    let si_path = base_dir.join("SI.xml");
-    let logos_dir = base_dir.join("logos");
-    if !si_path.exists() {
-        return Err("SI.xml not found in ./radiodns".to_string());
-    }
-    if !logos_dir.exists() {
-        return Err("logos/ folder not found in ./radiodns".to_string());
-    }
-
-    let mut missing = Vec::new();
-    let sizes: &[(u32, u32)] = &[(32, 32), (32, 112), (128, 128), (320, 240), (600, 600)];
-    for (w, h) in sizes {
-        let name = format!("logo_{}x{}.png", w, h);
-        let path = logos_dir.join(&name);
-        if !path.exists() {
-            missing.push(name);
-            continue;
-        }
-        let img = image::open(&path).map_err(|e| format!("Logo read failed: {} ({})", name, e))?;
-        let (iw, ih) = img.dimensions();
-        if iw != *w || ih != *h {
-            return Err(format!("Logo {} has wrong size ({}x{}).", name, iw, ih));
-        }
-    }
-
-    if !missing.is_empty() {
-        return Err(format!("Missing logos: {}", missing.join(", ")));
-    }
-
-    Ok("Validation OK: SI.xml and all logos present with correct sizes.".to_string())
 }
 
 fn build_pi_from_parts(country_hex: &str, area_hex: &str, program_hex: &str, ecc_hex: &str) -> Result<u16, String> {
@@ -2742,7 +2132,7 @@ fn header_style(_theme: &Theme) -> container_widget::Appearance {
     container_widget::Appearance {
         background: Some(Background::Color(color_surface_alt())),
         text_color: Some(color_text()),
-        border_radius: 10.0.into(),
+        border_radius: 12.0.into(),
         border_width: 1.0,
         border_color: color_border(),
     }
@@ -2752,7 +2142,7 @@ fn card_style(_theme: &Theme) -> container_widget::Appearance {
     container_widget::Appearance {
         background: Some(Background::Color(color_surface())),
         text_color: Some(color_text()),
-        border_radius: 14.0.into(),
+        border_radius: 16.0.into(),
         border_width: 1.0,
         border_color: color_border(),
     }
@@ -2762,8 +2152,8 @@ fn card_accent_style(_theme: &Theme) -> container_widget::Appearance {
     container_widget::Appearance {
         background: Some(Background::Color(color_surface())),
         text_color: Some(color_text()),
-        border_radius: 14.0.into(),
-        border_width: 2.0,
+        border_radius: 16.0.into(),
+        border_width: 1.5,
         border_color: color_accent(),
     }
 }
@@ -2772,9 +2162,8 @@ fn hero_style(_theme: &Theme) -> container_widget::Appearance {
     container_widget::Appearance {
         background: Some(Background::Color(color_surface())),
         text_color: Some(color_text()),
-        border_radius: 16.0.into(),
-        border_width: 1.0,
-        border_color: color_accent(),
+        border_radius: 20.0.into(),
+        ..Default::default()
     }
 }
 
@@ -2787,8 +2176,8 @@ fn body_style(_theme: &Theme) -> container_widget::Appearance {
 }
 
 fn pill<'a>(label: &str, bg: Color, fg: Color) -> Element<'a, Message> {
-    container(text(label).size(12))
-        .padding([4, 10])
+    container(text(label).size(12).style(fg))
+        .padding([5, 12])
         .style(theme::Container::Custom(Box::new(PillStyle { bg, fg })))
         .into()
 }
@@ -2800,24 +2189,28 @@ impl button_widget::StyleSheet for PrimaryButton {
 
     fn active(&self, _style: &Self::Style) -> button_widget::Appearance {
         button_widget::Appearance {
-            background: Some(Background::Color(color_accent())),
-            text_color: Color::from_rgb8(6, 16, 20),
-            border_radius: 10.0.into(),
+            background: Some(Background::Color(color_gradient_end())),
+            text_color: Color::from_rgb8(255, 255, 255),
+            border_radius: 12.0.into(),
             border_width: 1.0,
-            border_color: color_accent(),
+            border_color: rgba8f(168, 85, 247, 0.5),
+            shadow_offset: iced::Vector::new(0.0, 4.0),
             ..Default::default()
         }
     }
 
     fn hovered(&self, style: &Self::Style) -> button_widget::Appearance {
         let mut active = self.active(style);
-        active.background = Some(Background::Color(Color::from_rgb8(74, 222, 239)));
+        active.background = Some(Background::Color(Color::from_rgb8(139, 92, 246)));
+        active.shadow_offset = iced::Vector::new(0.0, 6.0);
+        active.border_color = rgba8f(168, 85, 247, 0.8);
         active
     }
 
     fn pressed(&self, style: &Self::Style) -> button_widget::Appearance {
         let mut active = self.active(style);
-        active.background = Some(Background::Color(Color::from_rgb8(22, 189, 214)));
+        active.background = Some(Background::Color(Color::from_rgb8(126, 34, 206)));
+        active.shadow_offset = iced::Vector::new(0.0, 2.0);
         active
     }
 }
@@ -2830,8 +2223,8 @@ impl button_widget::StyleSheet for GhostButton {
     fn active(&self, _style: &Self::Style) -> button_widget::Appearance {
         button_widget::Appearance {
             background: Some(Background::Color(color_surface_alt())),
-            text_color: color_text(),
-            border_radius: 10.0.into(),
+            text_color: color_muted(),
+            border_radius: 12.0.into(),
             border_width: 1.0,
             border_color: color_border(),
             ..Default::default()
@@ -2840,13 +2233,15 @@ impl button_widget::StyleSheet for GhostButton {
 
     fn hovered(&self, style: &Self::Style) -> button_widget::Appearance {
         let mut active = self.active(style);
-        active.background = Some(Background::Color(Color::from_rgb8(36, 46, 60)));
+        active.background = Some(Background::Color(color_surface()));
+        active.border_color = rgba8f(56, 189, 248, 0.3);
+        active.text_color = color_text();
         active
     }
 
     fn pressed(&self, style: &Self::Style) -> button_widget::Appearance {
         let mut active = self.active(style);
-        active.background = Some(Background::Color(Color::from_rgb8(28, 38, 50)));
+        active.background = Some(Background::Color(Color::from_rgb8(15, 23, 42)));
         active
     }
 }
@@ -2860,22 +2255,25 @@ impl button_widget::StyleSheet for DangerButton {
         button_widget::Appearance {
             background: Some(Background::Color(color_danger())),
             text_color: Color::WHITE,
-            border_radius: 10.0.into(),
+            border_radius: 12.0.into(),
             border_width: 1.0,
-            border_color: color_danger(),
+            border_color: rgba8f(248, 113, 113, 0.5),
+            shadow_offset: iced::Vector::new(0.0, 4.0),
             ..Default::default()
         }
     }
 
     fn hovered(&self, style: &Self::Style) -> button_widget::Appearance {
         let mut active = self.active(style);
-        active.background = Some(Background::Color(Color::from_rgb8(248, 113, 113)));
+        active.background = Some(Background::Color(Color::from_rgb8(252, 129, 129)));
+        active.shadow_offset = iced::Vector::new(0.0, 6.0);
         active
     }
 
     fn pressed(&self, style: &Self::Style) -> button_widget::Appearance {
         let mut active = self.active(style);
         active.background = Some(Background::Color(Color::from_rgb8(220, 38, 38)));
+        active.shadow_offset = iced::Vector::new(0.0, 2.0);
         active
     }
 }
@@ -2889,14 +2287,14 @@ impl button_widget::StyleSheet for TabButton {
 
     fn active(&self, _style: &Self::Style) -> button_widget::Appearance {
         let (bg, text_color, border_color) = if self.selected {
-            (color_accent(), Color::from_rgb8(6, 16, 20), color_accent())
+            (rgba8f(56, 189, 248, 0.15), color_accent(), rgba8f(56, 189, 248, 0.3))
         } else {
-            (color_surface_alt(), color_text(), color_border())
+            (rgba8f(255, 255, 255, 0.03), color_muted(), rgba8f(255, 255, 255, 0.06))
         };
         button_widget::Appearance {
             background: Some(Background::Color(bg)),
             text_color,
-            border_radius: 10.0.into(),
+            border_radius: 12.0.into(),
             border_width: 1.0,
             border_color,
             ..Default::default()
@@ -2904,18 +2302,26 @@ impl button_widget::StyleSheet for TabButton {
     }
 
     fn hovered(&self, style: &Self::Style) -> button_widget::Appearance {
-        let mut active = self.active(style);
-        if !self.selected {
-            active.background = Some(Background::Color(Color::from_rgb8(36, 46, 60)));
+        if self.selected {
+            return self.active(style);
         }
-        active
+        button_widget::Appearance {
+            background: Some(Background::Color(rgba8f(255, 255, 255, 0.06))),
+            text_color: color_text(),
+            border_radius: 12.0.into(),
+            border_width: 1.0,
+            border_color: rgba8f(255, 255, 255, 0.1),
+            ..Default::default()
+        }
     }
 
     fn pressed(&self, style: &Self::Style) -> button_widget::Appearance {
         let mut active = self.active(style);
-        if !self.selected {
-            active.background = Some(Background::Color(Color::from_rgb8(28, 38, 50)));
-        }
+        active.background = if self.selected {
+            Some(Background::Color(rgba8f(56, 189, 248, 0.2)))
+        } else {
+            Some(Background::Color(rgba8f(255, 255, 255, 0.04)))
+        };
         active
     }
 }
@@ -2936,6 +2342,209 @@ impl container_widget::StyleSheet for PillStyle {
             border_width: 1.0,
             border_color: self.bg,
         }
+    }
+}
+
+struct MetricPill;
+
+impl container_widget::StyleSheet for MetricPill {
+    type Style = Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> container_widget::Appearance {
+        container_widget::Appearance {
+            background: Some(Background::Color(rgba8f(255, 255, 255, 0.03))),
+            text_color: Some(color_muted()),
+            border_radius: 8.0.into(),
+            border_width: 1.0,
+            border_color: rgba8f(255, 255, 255, 0.05),
+        }
+    }
+}
+
+struct CustomTextInput;
+
+impl text_input_widget::StyleSheet for CustomTextInput {
+    type Style = Theme;
+
+    fn active(&self, _style: &Self::Style) -> text_input_widget::Appearance {
+        text_input_widget::Appearance {
+            background: Background::Color(rgba8f(255, 255, 255, 0.04)),
+            border_radius: 10.0.into(),
+            border_width: 1.0,
+            border_color: color_border(),
+            icon_color: color_muted(),
+        }
+    }
+
+    fn focused(&self, _style: &Self::Style) -> text_input_widget::Appearance {
+        text_input_widget::Appearance {
+            background: Background::Color(rgba8f(56, 189, 248, 0.05)),
+            border_radius: 10.0.into(),
+            border_width: 1.5,
+            border_color: rgba8f(56, 189, 248, 0.4),
+            icon_color: color_accent(),
+        }
+    }
+
+    fn placeholder_color(&self, _style: &Self::Style) -> Color {
+        rgba8f(120, 145, 180, 0.4)
+    }
+
+    fn value_color(&self, _style: &Self::Style) -> Color {
+        color_text()
+    }
+
+    fn disabled_color(&self, _style: &Self::Style) -> Color {
+        color_muted()
+    }
+
+    fn selection_color(&self, _style: &Self::Style) -> Color {
+        rgba8f(56, 189, 248, 0.3)
+    }
+
+    fn disabled(&self, _style: &Self::Style) -> text_input_widget::Appearance {
+        text_input_widget::Appearance {
+            background: Background::Color(rgba8f(255, 255, 255, 0.02)),
+            border_radius: 10.0.into(),
+            border_width: 1.0,
+            border_color: rgba8f(255, 255, 255, 0.04),
+            icon_color: color_muted(),
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style) -> text_input_widget::Appearance {
+        text_input_widget::Appearance {
+            background: Background::Color(rgba8f(255, 255, 255, 0.06)),
+            border_radius: 10.0.into(),
+            border_width: 1.0,
+            border_color: rgba8f(56, 189, 248, 0.3),
+            icon_color: color_accent(),
+        }
+    }
+}
+
+struct CustomSlider;
+
+impl slider_widget::StyleSheet for CustomSlider {
+    type Style = Theme;
+
+    fn active(&self, _style: &Self::Style) -> slider_widget::Appearance {
+        slider_widget::Appearance {
+            rail: slider_widget::Rail {
+                colors: (rgba8f(56, 189, 248, 0.2), color_bg()),
+                width: 4.0,
+                border_radius: 2.0.into(),
+            },
+            handle: slider_widget::Handle {
+                shape: slider_widget::HandleShape::Circle { radius: 7.0 },
+                color: color_accent(),
+                border_width: 1.0,
+                border_color: rgba8f(56, 189, 248, 0.4),
+            },
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style) -> slider_widget::Appearance {
+        slider_widget::Appearance {
+            rail: slider_widget::Rail {
+                colors: (rgba8f(56, 189, 248, 0.3), color_bg()),
+                width: 4.0,
+                border_radius: 2.0.into(),
+            },
+            handle: slider_widget::Handle {
+                shape: slider_widget::HandleShape::Circle { radius: 8.0 },
+                color: Color::from_rgb8(125, 211, 252),
+                border_width: 1.5,
+                border_color: rgba8f(56, 189, 248, 0.6),
+            },
+        }
+    }
+
+    fn dragging(&self, _style: &Self::Style) -> slider_widget::Appearance {
+        slider_widget::Appearance {
+            rail: slider_widget::Rail {
+                colors: (rgba8f(56, 189, 248, 0.4), color_bg()),
+                width: 4.0,
+                border_radius: 2.0.into(),
+            },
+            handle: slider_widget::Handle {
+                shape: slider_widget::HandleShape::Circle { radius: 8.0 },
+                color: Color::from_rgb8(125, 211, 252),
+                border_width: 1.5,
+                border_color: rgba8f(56, 189, 248, 0.8),
+            },
+        }
+    }
+}
+
+struct CustomProgressBar;
+
+impl progress_bar_widget::StyleSheet for CustomProgressBar {
+    type Style = Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> progress_bar_widget::Appearance {
+        progress_bar_widget::Appearance {
+            background: Background::Color(rgba8f(255, 255, 255, 0.06)),
+            bar: Background::Color(Color::from_rgb8(139, 92, 246)),
+            border_radius: 4.0.into(),
+        }
+    }
+}
+
+struct WarmProgressBar;
+
+impl progress_bar_widget::StyleSheet for WarmProgressBar {
+    type Style = Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> progress_bar_widget::Appearance {
+        progress_bar_widget::Appearance {
+            background: Background::Color(rgba8f(255, 255, 255, 0.06)),
+            bar: Background::Color(Color::from_rgb8(251, 146, 60)),
+            border_radius: 4.0.into(),
+        }
+    }
+}
+
+struct PeakyProgressBar;
+
+impl progress_bar_widget::StyleSheet for PeakyProgressBar {
+    type Style = Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> progress_bar_widget::Appearance {
+        progress_bar_widget::Appearance {
+            background: Background::Color(rgba8f(255, 255, 255, 0.06)),
+            bar: Background::Color(Color::from_rgb8(248, 113, 113)),
+            border_radius: 4.0.into(),
+        }
+    }
+}
+
+struct HiddenScrollbar;
+
+impl scrollable_widget::StyleSheet for HiddenScrollbar {
+    type Style = Theme;
+
+    fn active(&self, _style: &Self::Style) -> scrollable_widget::Scrollbar {
+        scrollable_widget::Scrollbar {
+            background: None,
+            border_radius: 0.0.into(),
+            border_width: 0.0,
+            border_color: Color::TRANSPARENT,
+            scroller: scrollable_widget::Scroller {
+                color: Color::TRANSPARENT,
+                border_radius: 0.0.into(),
+                border_width: 0.0,
+                border_color: Color::TRANSPARENT,
+            },
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style, _is_mouse_over_scrollbar: bool) -> scrollable_widget::Scrollbar {
+        self.active(_style)
+    }
+
+    fn dragging(&self, _style: &Self::Style) -> scrollable_widget::Scrollbar {
+        self.active(_style)
     }
 }
 
@@ -3019,12 +2628,12 @@ impl<Message> Program<Message, Renderer> for SpectrumView {
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let bg = Path::rectangle(iced::Point::ORIGIN, frame.size());
-        frame.fill(&bg, Color::from_rgb8(22, 22, 26));
+        frame.fill(&bg, Color::from_rgb8(6, 8, 20));
 
         let width = frame.size().width;
         let height = frame.size().height;
 
-        let grid_color = Color::from_rgb8(60, 30, 70);
+        let grid_color = rgba8f(99, 102, 241, 0.08);
         for i in 0..=6 {
             let y = height * (i as f32 / 6.0);
             let line = Path::line(iced::Point::new(0.0, y), iced::Point::new(width, y));
@@ -3037,11 +2646,30 @@ impl<Message> Program<Message, Renderer> for SpectrumView {
             frame.fill_text(Text {
                 content: format!("{:>3} dB", db),
                 position: iced::Point::new(6.0, y - 4.0),
-                color: Color::from_rgb8(160, 160, 170),
-                size: 12.0,
+                color: Color::from_rgb8(110, 120, 160),
+                size: 11.0,
                 ..Text::default()
             });
         }
+
+        let draw_fill = |frame: &mut Frame, data: &[f32], color: Color| {
+            if data.len() < 2 {
+                return;
+            }
+            let step = frame.size().width / (data.len() as f32 - 1.0);
+            let path = Path::new(|builder| {
+                builder.move_to(iced::Point::new(0.0, height));
+                for (i, db) in data.iter().enumerate() {
+                    let unit = (db.clamp(-60.0, 0.0) + 60.0) / 60.0;
+                    let x = i as f32 * step;
+                    let y = height - unit * height;
+                    builder.line_to(iced::Point::new(x, y));
+                }
+                builder.line_to(iced::Point::new(width, height));
+                builder.close();
+            });
+            frame.fill(&path, color);
+        };
 
         let draw_line = |frame: &mut Frame, data: &[f32], color: Color, width: f32| {
             if data.len() < 2 {
@@ -3063,20 +2691,35 @@ impl<Message> Program<Message, Renderer> for SpectrumView {
             frame.stroke(&path, Stroke::default().with_width(width).with_color(color));
         };
 
-        draw_line(&mut frame, &self.spectrum_avg_db, Color::from_rgb8(0, 190, 255), 2.0);
-        draw_line(&mut frame, &self.spectrum_peak_db, Color::from_rgb8(255, 120, 0), 1.0);
+        draw_fill(&mut frame, &self.spectrum_avg_db, rgba8f(56, 189, 248, 0.08));
+        draw_fill(&mut frame, &self.spectrum_peak_db, rgba8f(251, 146, 60, 0.05));
+
+        draw_line(&mut frame, &self.spectrum_avg_db, rgba8f(56, 189, 248, 0.6), 2.5);
+        draw_line(&mut frame, &self.spectrum_peak_db, rgba8f(251, 146, 60, 0.8), 1.5);
+
+        draw_line(
+            &mut frame,
+            &self.spectrum_avg_db,
+            rgba8f(56, 189, 248, 0.8),
+            1.0,
+        );
 
         let rds_x = width * (57000.0 / 96000.0);
         let rds_line = Path::line(
             iced::Point::new(rds_x, 0.0),
             iced::Point::new(rds_x, height),
         );
-        frame.stroke(&rds_line, Stroke::default().with_width(2.0).with_color(Color::from_rgb8(255, 140, 0)));
+        frame.stroke(&rds_line, Stroke::default().with_width(2.0).with_color(rgba8f(251, 146, 60, 0.5)));
+        let glow_line = Path::line(
+            iced::Point::new(rds_x, 0.0),
+            iced::Point::new(rds_x, height),
+        );
+        frame.stroke(&glow_line, Stroke::default().with_width(6.0).with_color(rgba8f(251, 146, 60, 0.1)));
         frame.fill_text(Text {
             content: "RDS 57k".to_string(),
-            position: iced::Point::new(rds_x + 6.0, 8.0),
-            color: Color::from_rgb8(255, 170, 40),
-            size: 12.0,
+            position: iced::Point::new(rds_x + 8.0, 8.0),
+            color: Color::from_rgb8(251, 170, 60),
+            size: 11.0,
             ..Text::default()
         });
 
@@ -3084,12 +2727,12 @@ impl<Message> Program<Message, Renderer> for SpectrumView {
         for freq in markers {
             let x = width * (freq / 96000.0);
             let line = Path::line(iced::Point::new(x, 0.0), iced::Point::new(x, height));
-            frame.stroke(&line, Stroke::default().with_width(1.0).with_color(Color::from_rgb8(50, 40, 60)));
+            frame.stroke(&line, Stroke::default().with_width(1.0).with_color(rgba8f(99, 102, 241, 0.1)));
             frame.fill_text(Text {
                 content: format!("{:.0}k", freq / 1000.0),
                 position: iced::Point::new(x + 4.0, height - 14.0),
-                color: Color::from_rgb8(160, 160, 170),
-                size: 11.0,
+                color: Color::from_rgb8(110, 120, 160),
+                size: 10.0,
                 ..Text::default()
             });
         }
@@ -3116,14 +2759,21 @@ impl<Message> Program<Message, Renderer> for ScopeView {
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let bg = Path::rectangle(iced::Point::ORIGIN, frame.size());
-        frame.fill(&bg, Color::from_rgb8(18, 18, 20));
+        frame.fill(&bg, Color::from_rgb8(5, 8, 18));
 
         let width = frame.size().width;
         let height = frame.size().height;
 
         let mid_y = height / 2.0;
         let mid_line = Path::line(iced::Point::new(0.0, mid_y), iced::Point::new(width, mid_y));
-        frame.stroke(&mid_line, Stroke::default().with_width(1.0).with_color(Color::from_rgb8(60, 60, 70)));
+        frame.stroke(&mid_line, Stroke::default().with_width(1.0).with_color(rgba8f(99, 102, 241, 0.1)));
+
+        let grid_h_lines = 4;
+        for i in 1..grid_h_lines {
+            let y = height * (i as f32 / grid_h_lines as f32);
+            let line = Path::line(iced::Point::new(0.0, y), iced::Point::new(width, y));
+            frame.stroke(&line, Stroke::default().with_width(1.0).with_color(rgba8f(99, 102, 241, 0.04)));
+        }
 
         let draw_trace = |frame: &mut Frame, data: &[f32], width: f32, mid_y: f32, color: Color, thickness: f32| {
             if data.len() < 2 {
@@ -3133,7 +2783,7 @@ impl<Message> Program<Message, Renderer> for ScopeView {
             let path = Path::new(|builder| {
                 for (i, s) in data.iter().enumerate() {
                     let x = i as f32 * step;
-                    let y = mid_y - (s.clamp(-1.0, 1.0) * mid_y);
+                    let y = mid_y - (s.clamp(-1.0, 1.0) * mid_y * 0.9);
                     if i == 0 {
                         builder.move_to(iced::Point::new(x, y));
                     } else {
@@ -3149,24 +2799,24 @@ impl<Message> Program<Message, Renderer> for ScopeView {
             &self.prev,
             width,
             mid_y,
-            Color::from_rgba(0.0, 1.0, 0.55, 0.2),
-            6.0,
+            rgba8f(52, 211, 153, 0.08),
+            8.0,
         );
         draw_trace(
             &mut frame,
             &self.samples,
             width,
             mid_y,
-            Color::from_rgba(0.0, 1.0, 0.6, 0.35),
-            3.5,
+            rgba8f(52, 211, 153, 0.15),
+            5.0,
         );
         draw_trace(
             &mut frame,
             &self.samples,
             width,
             mid_y,
-            Color::from_rgb8(0, 255, 140),
-            1.5,
+            rgba8f(52, 211, 153, 0.9),
+            1.8,
         );
 
         vec![frame.into_geometry()]
